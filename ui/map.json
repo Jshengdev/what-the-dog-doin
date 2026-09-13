@@ -2,88 +2,120 @@
   "note": "Map space = house.svg viewBox (0 0 1060 1540). path = the entity's route (draw on the page). entity = radius_px (how far a light reacts), speed_px_s, falloff (curve steepness; 1 linear, higher = brightness holds near the center then drops), other_room_factor (lights in rooms the entity is not in are scaled by this), samples (points along the strip line). lights = Johnny's placed markers: kind dot (lamp) or line (the strip); pts in map space; room is computed from rooms. zones stay for the chat commands and the light show.",
   "path": [
     [
-      848,
-      1370
+      417,
+      462
     ],
     [
-      656,
-      1365
+      416,
+      414
     ],
     [
-      460,
-      1316
+      400,
+      457
     ],
     [
-      406,
-      1138
+      401,
+      504
     ],
     [
-      419,
-      1000
+      408,
+      563
     ],
     [
-      339,
-      884
+      432,
+      622
     ],
     [
-      375,
-      763
+      459,
+      672
     ],
     [
-      491,
-      723
-    ],
-    [
-      527,
-      857
-    ],
-    [
-      428,
-      879
-    ],
-    [
-      330,
-      794
-    ],
-    [
-      393,
-      589
-    ],
-    [
-      455,
-      460
+      495,
+      715
     ],
     [
       522,
-      232
+      768
     ],
     [
-      428,
-      187
+      523,
+      814
     ],
     [
-      446,
-      643
+      504,
+      875
     ],
     [
-      446,
-      839
+      477,
+      921
     ],
     [
-      437,
-      973
+      469,
+      974
     ],
     [
-      437,
-      1178
+      482,
+      1029
     ],
     [
-      500,
-      1348
+      461,
+      1077
     ],
     [
-      879,
-      1379
+      418,
+      1055
+    ],
+    [
+      425,
+      1010
+    ],
+    [
+      459,
+      960
+    ],
+    [
+      492,
+      927
+    ],
+    [
+      517,
+      878
+    ],
+    [
+      520,
+      820
+    ],
+    [
+      520,
+      775
+    ],
+    [
+      510,
+      729
+    ],
+    [
+      488,
+      669
+    ],
+    [
+      460,
+      623
+    ],
+    [
+      430,
+      582
+    ],
+    [
+      419,
+      534
+    ],
+    [
+      416,
+      482
+    ],
+    [
+      413,
+      492
     ]
   ],
   "zones": [
@@ -425,5 +457,6 @@
     "falloff": 1.6,
     "other_room_factor": 0.3,
     "samples": 12
-  }
+  },
+  "stops": []
 }

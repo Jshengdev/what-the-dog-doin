@@ -50,6 +50,7 @@ TILT_MIN_DEG = 8.0                            # a tilt frame counts only if the 
 STALE_MS = 5000                               # state stream (20 Hz) older than this: the peer is dead, reconnect once
 WP_TIMEOUT_S = 30.0                           # a waypoint not reached in this long fails the follow (no retry)
 REC_HZ, REC_MIN_PX, REC_STEP_PX = 5.0, 10, 45   # route recording: sample rate, min move per sample, waypoint spacing (about 0.4 m)
+START_PX = 90                                 # a dog this close to the path's first point replays from the start (a loop's end is also its start)
 STOP_TIMEOUT_S = 180.0                        # a stop without resume for this long fails the follow
 
 
@@ -209,7 +210,9 @@ class DogSession:
         if not self.body._avoid:          # never follow blind: avoidance on and read back first, or the follow is refused
             self.avoid(True)
         pose = self.map_pose()
-        start = nav.nearest_index(path, pose["p"]) if from_nearest else 0
+        near_start = math.dist(path[0], pose["p"]) <= START_PX
+        start = 0 if (near_start or not from_nearest) else nav.nearest_index(path, pose["p"])   # at the start of a loop: replay it, not the end
+        log("dog", "follow from waypoint", start=start, n=len(path), near_start=near_start, dist_to_start_px=round(math.dist(path[0], pose["p"])))
         self.follow_state = {"active": True, "i": start, "n": len(path), "stops": stops, "stopped_at": None, "resume": False,
                              "reached": [], "started": time.time(), "error": None}
         self._follower = asyncio.run_coroutine_threadsafe(self._follow(path, stops, reach_px, start), self.loop)
