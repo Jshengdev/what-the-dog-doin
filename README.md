@@ -147,6 +147,10 @@ This is hardware in a real house, so we tested it the way you'd test a person: w
 
 **And the housemates check both.** A reply like "that's socks, not a bird" within 30 minutes of a posted look is acknowledged ("noted: …"), recorded against the exact post it corrects, and carried into every later look's prompt. Nothing is edited or deleted. A stop can also carry a tidy baseline (`python -m wtdd dog_say baseline=true stop=<i>`, the same look captured when the spot was clean); the model then reports only what changed since.
 
+**It answers only when spoken to, and only with what it knows.** "yo dog …" is a chat turn: the model gets the group's context (who said what, what the dog did and reported, the corrections) and answers once. Nothing else in the chat gets a reply. Asked "Yo dog" while the dog was off, it answered from the ledger:
+
+<p align="center"><img src="docs/media/chat-yo-dog.png" alt="'Yo dog' and the reply 'dog unreachable, probe failed just now.'" width="520"><br><sub>docs/media/chat-yo-dog.png: a chat turn with the dog powered down. The reply is the last probe row, not a guess.</sub></p>
+
 **The stranger.** The detector's person box (with its confidence) is what arms the question. The dog posts the boxed photo with "who dis?!". The group's next answer is the verdict: "idk" and its kin mean "STRANGER DANGER!!!" three times and the room strobing red and blue; anything else stands it down. Every step is a row: `watch.detect`, `intruder.alarm`, `intruder.verdict`, `lights.signal`.
 
 The verdict, from the take's ledger: `intruder.verdict` at 15:18:22, "Idk", stranger; `lights.alarm` at 15:18:32, 5 signaled, 5 restored, 0 errors. The video shows the strobe.
