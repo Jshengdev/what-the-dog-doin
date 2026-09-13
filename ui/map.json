@@ -1,5 +1,5 @@
 {
-  "note": "Shared map space = house.svg viewBox (0 0 1060 1540). path = the dot's route in order; zones = polygons with the Hue zone name from wtdd/hue/zones.json and whether the strip belongs to it. Edit here or on the page (Edit path, Save). lights = markers: kind dot (a lamp) or line (the strip), pts in map space; drag them on the page, click one to make the real light blink (identify), double-click to relabel, Save. follow = zones | proximity; field_radius_px = how far a light reacts to the dog.",
+  "note": "Map space = house.svg viewBox (0 0 1060 1540). path = the entity's route (draw on the page). entity = radius_px (how far a light reacts), speed_px_s, falloff (curve steepness; 1 linear, higher = brightness holds near the center then drops), other_room_factor (lights in rooms the entity is not in are scaled by this), samples (points along the strip line). lights = Johnny's placed markers: kind dot (lamp) or line (the strip); pts in map space; room is computed from rooms. zones stay for the chat commands and the light show.",
   "path": [
     [
       290,
@@ -22,8 +22,6 @@
       1240
     ]
   ],
-  "speed_px_s": 60,
-  "behind_lag_s": 1.5,
   "zones": [
     {
       "name": "a",
@@ -99,8 +97,6 @@
       "strip": true
     }
   ],
-  "field_radius_px": 220,
-  "follow": "zones",
   "lights": [
     {
       "id": "1e53ff31-2dcc-496a-ad93-3cc25eb50bad",
@@ -110,8 +106,8 @@
       "device": "hue",
       "pts": [
         [
-          300,
-          1120
+          655,
+          1267
         ]
       ]
     },
@@ -123,8 +119,8 @@
       "device": "hue",
       "pts": [
         [
-          430,
-          1110
+          596,
+          780
         ]
       ]
     },
@@ -136,8 +132,8 @@
       "device": "hue",
       "pts": [
         [
-          560,
-          1120
+          304,
+          336
         ]
       ]
     },
@@ -149,8 +145,8 @@
       "device": "hue",
       "pts": [
         [
-          650,
-          1330
+          323,
+          1001
         ]
       ]
     },
@@ -162,8 +158,8 @@
       "device": "strip",
       "pts": [
         [
-          280,
-          1420
+          273,
+          1366
         ],
         [
           690,
@@ -171,5 +167,194 @@
         ]
       ]
     }
-  ]
+  ],
+  "rooms": [
+    {
+      "name": "living room",
+      "poly": [
+        [
+          255,
+          1040
+        ],
+        [
+          700,
+          1040
+        ],
+        [
+          700,
+          1440
+        ],
+        [
+          430,
+          1440
+        ],
+        [
+          400,
+          1470
+        ],
+        [
+          300,
+          1470
+        ],
+        [
+          255,
+          1400
+        ]
+      ]
+    },
+    {
+      "name": "living room left",
+      "poly": [
+        [
+          30,
+          545
+        ],
+        [
+          255,
+          545
+        ],
+        [
+          255,
+          1040
+        ],
+        [
+          30,
+          1040
+        ]
+      ]
+    },
+    {
+      "name": "dining room",
+      "poly": [
+        [
+          255,
+          545
+        ],
+        [
+          620,
+          545
+        ],
+        [
+          620,
+          1040
+        ],
+        [
+          255,
+          1040
+        ]
+      ]
+    },
+    {
+      "name": "kitchen",
+      "poly": [
+        [
+          620,
+          620
+        ],
+        [
+          960,
+          620
+        ],
+        [
+          960,
+          940
+        ],
+        [
+          620,
+          940
+        ]
+      ]
+    },
+    {
+      "name": "entry porch",
+      "poly": [
+        [
+          700,
+          1240
+        ],
+        [
+          960,
+          1240
+        ],
+        [
+          960,
+          1400
+        ],
+        [
+          700,
+          1400
+        ]
+      ]
+    },
+    {
+      "name": "bedroom 1",
+      "poly": [
+        [
+          30,
+          200
+        ],
+        [
+          255,
+          200
+        ],
+        [
+          255,
+          545
+        ],
+        [
+          30,
+          545
+        ]
+      ]
+    },
+    {
+      "name": "bedroom 2",
+      "poly": [
+        [
+          255,
+          50
+        ],
+        [
+          600,
+          50
+        ],
+        [
+          600,
+          545
+        ],
+        [
+          255,
+          545
+        ]
+      ]
+    },
+    {
+      "name": "bedroom 3",
+      "poly": [
+        [
+          600,
+          50
+        ],
+        [
+          870,
+          50
+        ],
+        [
+          870,
+          320
+        ],
+        [
+          600,
+          320
+        ]
+      ]
+    }
+  ],
+  "entity": {
+    "radius_px": 220,
+    "speed_px_s": 60,
+    "falloff": 1.6,
+    "other_room_factor": 0.3,
+    "samples": 12
+  }
 }

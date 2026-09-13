@@ -7,39 +7,43 @@
 <link rel="stylesheet" href="tokens.css">
 <style>
   body { margin: 0; background: var(--page, #f6f3ec); color: var(--ink, #262323); font-family: Onest, ui-sans-serif, system-ui, sans-serif; font-weight: 430; font-size: 13px; }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
-  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 22px 20px 64px; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
   .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .04em; opacity: .7; }
-  .grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
-  .panel { background: var(--raised, #fbfaf7); border-radius: 18px; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(38,35,35,.06), 0 6px 18px -12px rgba(38,35,35,.25); margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 16px; align-items: start; }
+  .panel { background: var(--raised, #fbfaf7); border-radius: 18px; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(38,35,35,.06), 0 6px 18px -12px rgba(38,35,35,.25); margin-bottom: 14px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .row.tight { gap: 6px; }
   button { font: inherit; font-size: 12px; padding: 6px 12px; border: 0; border-radius: 999px; background: #fff; color: var(--ink, #262323); box-shadow: 0 0 0 1px rgba(38,35,35,.12); cursor: pointer; }
   button:hover { box-shadow: 0 0 0 1px rgba(38,35,35,.25), 0 6px 14px -10px rgba(38,35,35,.4); }
   button.key { background: var(--ink, #262323); color: #fff; }
   button.on { background: #fff3c4; }
+  button.small { font-size: 11px; padding: 4px 9px; }
   button[disabled] { opacity: .45; cursor: default; }
-  input { font: inherit; font-size: 12px; width: 64px; padding: 5px 8px; border: 0; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgba(38,35,35,.15); }
-  .ledger { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.55; max-height: 300px; overflow: auto; }
+  input[type=number] { font: inherit; font-size: 12px; width: 58px; padding: 5px 8px; border: 0; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgba(38,35,35,.15); }
+  input[type=range] { width: 120px; }
+  label.k { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; opacity: .75; display: inline-flex; align-items: center; gap: 6px; }
+  .cmd { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10px; opacity: .55; margin: 0 0 6px 2px; }
+  .ledger { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.55; max-height: 260px; overflow: auto; }
   .ledger div { display: grid; grid-template-columns: 62px 1fr 56px; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(38,35,35,.06); }
   .ok { color: #2f7d4f; } .bad { color: #b2382e; } .live { color: var(--live, #0b0dc4); }
   svg.map { width: 100%; height: auto; display: block; border-radius: 12px; background: #fbfaf7; touch-action: none; }
   svg.map.placing { cursor: crosshair; }
-  .zone { fill: rgba(38,35,35,.03); stroke: rgba(38,35,35,.3); stroke-width: 2; stroke-dasharray: 8 6; }
-  .zone.lit { fill: rgba(255,196,64,.35); stroke: rgba(38,35,35,.6); }
-  .zone.working { fill: rgba(11,13,196,.10); }
+  .room { fill: none; stroke: none; } .room.here { fill: rgba(11,13,196,.05); }
   .path { fill: none; stroke: rgba(38,35,35,.55); stroke-width: 3; stroke-dasharray: 6 8; }
-  .pt { fill: #fff; stroke: rgba(38,35,35,.6); stroke-width: 2; }
-  .dot { fill: var(--live, #0b0dc4); } .dot-halo { fill: var(--live, #0b0dc4); opacity: .18; } .field { fill: none; stroke: var(--live, #0b0dc4); stroke-opacity: .35; stroke-dasharray: 4 6; }
-  .lamp { stroke: #262323; stroke-width: 3; cursor: grab; }
-  .lamp-glow { fill: #ffcc44; }
-  .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; }
-  .strip-glow { stroke: #ffcc44; stroke-width: 22; stroke-linecap: round; }
+  .pt { fill: #fff; stroke: rgba(38,35,35,.6); stroke-width: 2; cursor: grab; }
+  .dot { fill: var(--live, #0b0dc4); } .dot-halo { fill: var(--live, #0b0dc4); opacity: .18; } .field { fill: rgba(11,13,196,.04); stroke: var(--live, #0b0dc4); stroke-opacity: .35; stroke-dasharray: 4 6; }
+  .lamp { stroke: #262323; stroke-width: 3; cursor: grab; } .lamp-glow { fill: #ffcc44; }
+  .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; } .strip-glow { stroke: #ffcc44; stroke-width: 24; stroke-linecap: round; }
   .handle { fill: #fff; stroke: #262323; stroke-width: 2; cursor: grab; }
   .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 17px; fill: #262323; paint-order: stroke; stroke: #fbfaf7; stroke-width: 5px; user-select: none; pointer-events: none; }
+  .levels { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.7; }
+  .bar { display: inline-block; height: 7px; background: #ffcc44; border-radius: 4px; vertical-align: middle; margin-left: 8px; transition: width .2s; }
   .status { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.6; } .status b { font-weight: 600; }
   h1 { font-size: 20px; font-weight: 480; margin: 0; }
   h2 { font-size: 11px; font-weight: 480; letter-spacing: .08em; text-transform: uppercase; opacity: .6; margin: 0 0 8px; }
-  .hint { font-size: 11.5px; opacity: .7; margin: 4px 0 8px; }
+  .hint { font-size: 11.5px; opacity: .7; margin: 2px 0 8px; }
+  .name { min-width: 118px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -51,177 +55,179 @@ import htm from "https://esm.sh/htm@3";
 const html = htm.bind(React.createElement);
 const API = "";
 
+// ---------- geometry
 const call = async (name, args = {}) => (await fetch(`${API}/tools/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args) })).json();
 const inside = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
-const centroid = poly => poly.reduce((a, p) => [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length], [0, 0]);
-const dist = (p, a, b) => {  // point to segment (or to point when a == b)
-  if (!b) return Math.hypot(p[0] - a[0], p[1] - a[1]);
-  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
-  const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
-  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
-};
+const d2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const roomOf = (p, rooms) => (rooms || []).find(r => inside(p, r.poly))?.name || null;
+
+// The field. score(light) in 0..1 = how much of the light sits inside the entity's radius, weighted toward the center.
+//  lamp:  (1 - d/R)^falloff at the lamp's point.
+//  strip: the mean of that over `samples` points along the line: fully inside and centered scores near 1, an edge graze scores low.
+//  rooms: a light in a room the entity is not standing in is scaled by other_room_factor, so the other world dims away.
+function score(L, p, ent, here) {
+  const R = ent.radius_px, k = ent.falloff || 1;
+  const w = q => Math.pow(Math.max(0, 1 - d2(p, q) / R), k);
+  let s;
+  if (L.kind === "line") { const n = ent.samples || 12, [a, b] = L.pts; let acc = 0; for (let i = 0; i <= n; i++) acc += w([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]); s = acc / (n + 1); }
+  else s = w(L.pts[0]);
+  if (here && L.room && L.room !== here) s *= ent.other_room_factor ?? 0.3;
+  return s;
+}
 
 function App() {
-  const [tools, setTools] = useState([]);
   const [map, setMap] = useState(null);
-  const [ledger, setLedger] = useState([]);
   const [status, setStatus] = useState(null);
+  const [ledger, setLedger] = useState([]);
   const [busy, setBusy] = useState(null);
   const [last, setLast] = useState(null);
-  const [mode, setMode] = useState(null);         // null | "path" | "dot" | "line"
-  const [placing, setPlacing] = useState(null);   // light being placed {name, device}
-  const [pending, setPending] = useState(null);   // first point of a line
+  const [mode, setMode] = useState(null);          // null | "path" | "dot" | "line"
+  const [placing, setPlacing] = useState(null);
+  const [pending, setPending] = useState(null);
   const [dot, setDot] = useState(null);
-  const [lit, setLit] = useState({});
-  const [working, setWorking] = useState({});
-  const [levels, setLevels] = useState({});       // light id -> 0..100 shown on the map
+  const [here, setHere] = useState(null);
+  const [levels, setLevels] = useState({});
   const [pct, setPct] = useState(20);
   const playing = useRef(false);
-  const drag = useRef(null);                       // {li, pi} light index, point index
-  const moved = useRef(false);
-  const sent = useRef({});                         // proximity throttle: id -> {level, t}
+  const drag = useRef(null); const moved = useRef(false);
+  const sent = useRef({});
   const svgRef = useRef(null);
 
-  useEffect(() => { fetch(`${API}/tools`).then(r => r.json()).then(setTools); fetch(`${API}/map`).then(r => r.json()).then(setMap); }, []);
+  useEffect(() => { fetch(`${API}/map`).then(r => r.json()).then(setMap); call("lights_status").then(o => o.ok && setStatus(o.result)); }, []);
   useEffect(() => { const t = setInterval(() => fetch(`${API}/ledger?n=25`).then(r => r.json()).then(setLedger), 2000); return () => clearInterval(t); }, []);
 
   const run = async (name, args) => { setBusy(name); const out = await call(name, args); setLast(out); setBusy(null); if (name === "lights_status" && out.ok) setStatus(out.result); return out; };
   const toMap = e => { const svg = svgRef.current, pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(p.x), Math.round(p.y)]; };
-  const saveMap = async () => { await fetch(`${API}/map`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(map) }); setMode(null); setPlacing(null); setPending(null); };
+  const withRooms = m => ({ ...m, lights: (m.lights || []).map(L => ({ ...L, room: roomOf(L.kind === "line" ? [(L.pts[0][0] + L.pts[1][0]) / 2, (L.pts[0][1] + L.pts[1][1]) / 2] : L.pts[0], m.rooms) })) });
+  const saveMap = async () => { const m = withRooms(map); setMap(m); await fetch(`${API}/map`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }); setMode(null); setPlacing(null); setPending(null); };
+  const setEnt = (k, v) => setMap({ ...map, entity: { ...map.entity, [k]: v } });
 
-  // ----- zones follow (the corridor rule) and proximity follow (the field)
-  const setZone = async (z, on) => {
-    setWorking(w => ({ ...w, [z.name]: true }));
-    const out = await call("zone_set", { zone: z.name, on });
-    if (z.strip) await call("strip_set", { on });
-    setWorking(w => ({ ...w, [z.name]: false })); setLit(l => ({ ...l, [z.name]: on && out.ok }));
-  };
-  const proximity = async p => {
-    const R = map.field_radius_px || 220, now = performance.now();
-    for (const L of map.lights || []) {
-      const d = dist(p, L.pts[0], L.pts[1]);
-      const level = Math.round(100 * Math.max(0, 1 - d / R));
-      setLevels(v => ({ ...v, [L.id]: level }));
-      const s = sent.current[L.id] || { level: -1, t: 0 };
-      if (Math.abs(level - s.level) >= 15 && now - s.t > 1200) {          // throttle: real calls cost 0.4 to 0.8 s each
-        sent.current[L.id] = { level, t: now };
-        if (L.device === "strip") call("strip_set", { on: level > 0, percent: Math.max(level, 1) });
-        else call("hue_light_set", { light: L.id, on: level > 0, percent: Math.max(level, 1) });
-      }
-    }
-  };
+  // ---------- the run: entity along the path; real lights follow the field, throttled
   const play = async () => {
-    if (!map || playing.current) return;
+    if (!map || playing.current || map.path.length < 2) return;
     playing.current = true; sent.current = {};
-    const pts = map.path, speed = map.speed_px_s || 60, lag = (map.behind_lag_s || 1.5) * 1000, byField = map.follow === "proximity";
-    let cur = null; const t0 = performance.now();
+    const m = withRooms(map), pts = m.path, ent = m.entity, speed = ent.speed_px_s || 60;
+    await fetch(`${API}/map`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) });   // the walk reads map.json
+    const walking = call("walk_path");      // the real lights: one implementation (wtdd/field.py), same as the chat demo
     const segs = []; let total = 0;
-    for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); segs.push([pts[i-1], pts[i], d]); total += d; }
+    for (let i = 1; i < pts.length; i++) { const d = d2(pts[i], pts[i-1]); segs.push([pts[i-1], pts[i], d]); total += d; }
     const at = s => { let acc = 0; for (const [a, b, d] of segs) { if (s <= acc + d) { const k = (s - acc) / d; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; } acc += d; } return pts[pts.length - 1]; };
+    const t0 = performance.now();
     await new Promise(res => {
       const step = () => {
         const s = Math.min(total, (performance.now() - t0) / 1000 * speed);
-        const p = at(s); setDot(p);
-        if (byField) proximity(p);
-        else {
-          const z = map.zones.find(z => inside(p, z.poly)) || null;
-          if (z && z.name !== cur) { const prev = map.zones.find(x => x.name === cur); cur = z.name; setZone(z, true); if (prev) setTimeout(() => setZone(prev, false), lag); }
-        }
+        const p = at(s), room = roomOf(p, m.rooms);
+        setDot(p); setHere(room);
+        const lv = {};
+        for (const L of m.lights) lv[L.id] = Math.round(100 * score(L, p, ent, room));   // display only; writes happen server-side
+        setLevels(lv);
         if (s < total && playing.current) requestAnimationFrame(step); else res();
       };
       requestAnimationFrame(step);
     });
-    if (byField) { for (const L of map.lights || []) { if (L.device === "strip") call("strip_set", { on: false }); else call("hue_light_set", { light: L.id, on: false }); } setLevels({}); }
-    else { const lastZ = map.zones.find(z => z.name === cur); if (lastZ) setTimeout(() => setZone(lastZ, false), lag); }
-    playing.current = false; setTimeout(() => setDot(null), lag);
+    playing.current = false;
+    const out = await walking; setLast(out);
+    setTimeout(() => { setDot(null); setHere(null); setLevels({}); }, 1200);
   };
+  const stop = () => { playing.current = false; };
 
-  // ----- map interaction: placing (path points, lamp dots, strip lines) and dragging markers
+  // ---------- editing: path points, lamp dots, strip line; all draggable
   const onMapClick = e => {
     if (!map || drag.current || moved.current) { moved.current = false; return; }
     const p = toMap(e);
     if (mode === "path") setMap({ ...map, path: [...map.path, p] });
     if (mode === "dot" && placing) { setMap({ ...map, lights: [...(map.lights || []).filter(l => l.id !== placing.id), { ...placing, kind: "dot", pts: [p] }] }); setPlacing(null); setMode(null); }
-    if (mode === "line" && placing) {
-      if (!pending) setPending(p);
-      else { setMap({ ...map, lights: [...(map.lights || []).filter(l => l.id !== placing.id), { ...placing, kind: "line", pts: [pending, p] }] }); setPending(null); setPlacing(null); setMode(null); }
-    }
+    if (mode === "line" && placing) { if (!pending) setPending(p); else { setMap({ ...map, lights: [...(map.lights || []).filter(l => l.id !== placing.id), { ...placing, kind: "line", pts: [pending, p] }] }); setPending(null); setPlacing(null); setMode(null); } }
   };
-  const onDown = (li, pi) => e => { e.stopPropagation(); drag.current = { li, pi }; moved.current = false; e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); };
+  const onDown = (kind, li, pi) => e => { e.stopPropagation(); drag.current = { kind, li, pi }; moved.current = false; e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); };
   const onMove = e => {
     if (!drag.current) return;
-    moved.current = true;
-    const p = toMap(e); const { li, pi } = drag.current;
-    setMap(m => { const lights = m.lights.map((L, i) => i !== li ? L : { ...L, pts: L.pts.map((q, j) => j === pi ? p : q) }); return { ...m, lights }; });
+    moved.current = true; const p = toMap(e); const { kind, li, pi } = drag.current;
+    setMap(m => kind === "path" ? { ...m, path: m.path.map((q, i) => i === li ? p : q) }
+                             : { ...m, lights: m.lights.map((L, i) => i !== li ? L : { ...L, pts: L.pts.map((q, j) => j === pi ? p : q) }) });
   };
   const onUp = () => { drag.current = null; };
   const identify = L => { if (moved.current) return; run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 }); };
   const relabel = L => { const label = prompt(`label for ${L.name}`, L.label || L.name); if (label != null) setMap(m => ({ ...m, lights: m.lights.map(x => x.id === L.id ? { ...x, label } : x) })); };
   const startPlace = (light, kind) => { setPlacing(light); setMode(kind); setPending(null); };
 
-  const btn = (label, name, args, key) => html`<button class=${key ? "key" : ""} disabled=${busy !== null} onClick=${() => run(name, args)}>${busy === name ? "…" : label}</button>`;
+  const cmd = (label, name, args, opts = {}) => html`<span><button class=${opts.key ? "key" : ""} title=${opts.title || ""} disabled=${busy !== null} onClick=${() => run(name, args)}>${busy === name ? "…" : label}</button></span>`;
+  const cli = (name, args) => `python -m wtdd ${name}${Object.entries(args).map(([k, v]) => ` ${k}=${v}`).join("")}`;
   const palette = status ? [...status.hue.filter(l => l.room === "Living room").map(l => ({ id: l.id, name: l.name, label: l.name, device: "hue" })), { id: "strip", name: "strip", label: "LED strip", device: "strip" }] : (map?.lights || []);
+  const ent = map?.entity || {};
 
   return html`<div class="wrap">
-    <div class="top"><h1>what the dog doin <span class="mono">· remote</span></h1><span class="mono">${tools.length} tools · <span class="live">live</span> · python -m wtdd.api</span></div>
+    <div class="top"><h1>what the dog doin <span class="mono">· remote</span></h1><span class="mono"><span class="live">live</span> · python -m wtdd.api · every button is one file in wtdd/tools</span></div>
     <div class="grid">
       <div>
         <div class="panel">
           <h2>the castle · first floor</h2>
           <div class="row">
-            <button class="key" onClick=${play} disabled=${!map}>▶ run the corridor</button>
-            <button onClick=${() => { playing.current = false; }}>stop</button>
-            ${map && html`<button class=${map.follow === "proximity" ? "on" : ""} onClick=${() => setMap({ ...map, follow: map.follow === "proximity" ? "zones" : "proximity" })}>follow: ${map.follow || "zones"}</button>`}
-            ${map && html`<span class="mono">radius <input type="number" value=${map.field_radius_px} onInput=${e => setMap({ ...map, field_radius_px: +e.target.value })}/> px</span>`}
-            <button class=${mode === "path" ? "on" : ""} onClick=${() => setMode(mode === "path" ? null : "path")}>${mode === "path" ? "adding path points…" : "edit path"}</button>
+            <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2}>▶ walk the path</button>
+            <button onClick=${stop}>stop</button>
+            <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [] })}>clear path</button>`}
-            <button class="key" onClick=${saveMap}>save map</button>
+            <button class="key" onClick=${saveMap}>save</button>
+            <span class="mono">${here ? `in: ${here}` : map ? `${map.path.length} path pts · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : "drag a marker to move it · click one to make the real light blink · double-click to relabel · save when it matches the room"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust" : "drag a lamp, a strip end, or a path point · click a light to blink the real one · double-click to relabel · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
-            ${map.zones.map(z => html`<polygon key=${z.name} class=${"zone" + (lit[z.name] ? " lit" : "") + (working[z.name] ? " working" : "")} points=${z.poly.map(p => p.join(",")).join(" ")}/>`)}
-            ${map.zones.map(z => { const c = centroid(z.poly); return html`<text key=${"z" + z.name} class="lbl" x=${c[0]} y=${c[1] + 120} text-anchor="middle" opacity=".6">${z.label}</text>`; })}
+            ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
-            ${map.path.map((p, i) => html`<circle key=${"p" + i} class="pt" cx=${p[0]} cy=${p[1]} r="6"/>`)}
+            ${map.path.map((p, i) => html`<circle key=${"p" + i} class="pt" cx=${p[0]} cy=${p[1]} r="7" onPointerDown=${onDown("path", i, 0)} onClick=${e => e.stopPropagation()}/>`)}
             ${(map.lights || []).map((L, li) => {
               const lv = levels[L.id] || 0;
               if (L.kind === "line") return html`<g key=${L.id}>
                 ${lv > 0 && html`<line class="strip-glow" x1=${L.pts[0][0]} y1=${L.pts[0][1]} x2=${L.pts[1][0]} y2=${L.pts[1][1]} opacity=${lv / 100}/>`}
                 <line class="strip-line" x1=${L.pts[0][0]} y1=${L.pts[0][1]} x2=${L.pts[1][0]} y2=${L.pts[1][1]} onClick=${e => { e.stopPropagation(); identify(L); }} onDoubleClick=${() => relabel(L)}/>
-                <circle class="handle" cx=${L.pts[0][0]} cy=${L.pts[0][1]} r="9" onPointerDown=${onDown(li, 0)} onClick=${e => e.stopPropagation()}/>
-                <circle class="handle" cx=${L.pts[1][0]} cy=${L.pts[1][1]} r="9" onPointerDown=${onDown(li, 1)} onClick=${e => e.stopPropagation()}/>
+                <circle class="handle" cx=${L.pts[0][0]} cy=${L.pts[0][1]} r="9" onPointerDown=${onDown("light", li, 0)} onClick=${e => e.stopPropagation()}/>
+                <circle class="handle" cx=${L.pts[1][0]} cy=${L.pts[1][1]} r="9" onPointerDown=${onDown("light", li, 1)} onClick=${e => e.stopPropagation()}/>
                 <text class="lbl" x=${(L.pts[0][0] + L.pts[1][0]) / 2} y=${(L.pts[0][1] + L.pts[1][1]) / 2 - 16} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
               const [x, y] = L.pts[0];
               return html`<g key=${L.id}>
-                ${lv > 0 && html`<circle class="lamp-glow" cx=${x} cy=${y} r=${18 + lv * 0.4} opacity=${0.15 + lv / 140}/>`}
-                <circle class="lamp" cx=${x} cy=${y} r="14" fill=${lv ? "#ffe08a" : "#fff"} onPointerDown=${onDown(li, 0)} onClick=${e => { e.stopPropagation(); identify(L); }} onDoubleClick=${() => relabel(L)}/>
+                ${lv > 0 && html`<circle class="lamp-glow" cx=${x} cy=${y} r=${18 + lv * 0.45} opacity=${0.15 + lv / 140}/>`}
+                <circle class="lamp" cx=${x} cy=${y} r="14" fill=${lv ? "#ffe08a" : "#fff"} onPointerDown=${onDown("light", li, 0)} onClick=${e => { e.stopPropagation(); identify(L); }} onDoubleClick=${() => relabel(L)}/>
                 <text class="lbl" x=${x} y=${y - 22} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
-            ${dot && map.follow === "proximity" && html`<circle class="field" cx=${dot[0]} cy=${dot[1]} r=${map.field_radius_px || 220}/>`}
-            ${dot && html`<circle class="dot-halo" cx=${dot[0]} cy=${dot[1]} r="26"/><circle class="dot" cx=${dot[0]} cy=${dot[1]} r="11"/>`}
+            ${dot && html`<circle class="field" cx=${dot[0]} cy=${dot[1]} r=${ent.radius_px || 220}/><circle class="dot-halo" cx=${dot[0]} cy=${dot[1]} r="26"/><circle class="dot" cx=${dot[0]} cy=${dot[1]} r="11"/>`}
           </svg>`}
         </div>
       </div>
       <div>
         <div class="panel">
-          <h2>lights on the map · dot maker & line maker</h2>
-          <div class="hint">place each real light where it lives, then click it to blink it and check you put the right one in the right spot.</div>
-          ${palette.map(L => html`<div class="row" key=${L.id}><span style=${{ minWidth: 130 }}>${(map?.lights || []).find(x => x.id === L.id)?.label || L.name}</span>
-            <button onClick=${() => startPlace(L, "dot")}>${L.device === "strip" ? "place as dot" : "place dot"}</button>
-            ${L.device === "strip" && html`<button onClick=${() => startPlace(L, "line")}>draw line</button>`}
-            <button onClick=${() => run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 })}>blink</button></div>`)}
-          ${!status && html`<div class="row"><button onClick=${() => run("lights_status", {})}>load lights</button></div>`}
+          <h2>entity · the dog on the map</h2>
+          <div class="hint">closer = brighter. the strip scores along its length, so a graze at its edge is dim and a pass over its middle is bright. lights in other rooms fade by the other-room factor.</div>
+          ${map && html`<div class="row"><label class="k">radius <input type="range" min="60" max="500" value=${ent.radius_px} onInput=${e => setEnt("radius_px", +e.target.value)}/> ${ent.radius_px} px</label></div>
+          <div class="row"><label class="k">speed <input type="range" min="20" max="300" value=${ent.speed_px_s} onInput=${e => setEnt("speed_px_s", +e.target.value)}/> ${ent.speed_px_s} px/s</label></div>
+          <div class="row"><label class="k">falloff <input type="range" min="0.5" max="4" step="0.1" value=${ent.falloff} onInput=${e => setEnt("falloff", +e.target.value)}/> ${ent.falloff}</label>
+          <label class="k">other room <input type="range" min="0" max="1" step="0.05" value=${ent.other_room_factor} onInput=${e => setEnt("other_room_factor", +e.target.value)}/> ×${ent.other_room_factor}</label></div>`}
+          <div class="levels">${(map?.lights || []).map(L => html`<div key=${L.id}><span class="name">${L.label}</span>${String(levels[L.id] || 0).padStart(3)}%<span class="bar" style=${{ width: (levels[L.id] || 0) * 1.2 + "px" }}></span></div>`)}</div>
         </div>
         <div class="panel">
-          <h2>living room · both protocols</h2>
-          <div class="row">${btn("lights on", "lights_on", {}, true)}${btn("lights off", "lights_off", {})}${btn("dim 20", "lights_dim", { percent: 20 })}${btn("bright", "lights_dim", { percent: 100 })}${btn("show", "light_show", {})}</div>
-          <div class="row"><input type="number" value=${pct} onInput=${e => setPct(+e.target.value)} min="0" max="100"/>${btn("set %", "lights_dim", { percent: pct })}${btn("strip warm", "strip_temp", { percent: 0 })}${btn("strip cool", "strip_temp", { percent: 100 })}${btn("fade strip", "strip_fade", {})}${btn("red/blue 5s", "hue_signal", { light: "special", seconds: 5 })}${btn("read all", "lights_status", {})}</div>
-          ${last && html`<div class="mono" style=${{ marginTop: 8 }}>${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || JSON.stringify(last.result).slice(0, 160))) : last.error}</div>`}
+          <h2>lights on the map</h2>
+          <div class="hint">blink a light, place it where it lives, drag to fix, double-click its marker to name it, save.</div>
+          ${palette.map(L => html`<div class="row tight" key=${L.id}><span class="name">${(map?.lights || []).find(x => x.id === L.id)?.label || L.name}</span>
+            <button class="small" onClick=${() => run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 })}>blink</button>
+            <button class="small" onClick=${() => startPlace(L, "dot")}>place dot</button>
+            ${L.device === "strip" && html`<button class="small" onClick=${() => startPlace(L, "line")}>draw line</button>`}</div>`)}
+        </div>
+        <div class="panel">
+          <h2>commands · living room</h2>
+          <div class="row">${cmd("living room on", "lights_on", {}, { key: true, title: "4 Hue lamps + strip, read back" })}${cmd("living room off", "lights_off", {})}${cmd("20 %", "lights_dim", { percent: 20 })}${cmd("100 %", "lights_dim", { percent: 100 })}
+            <input type="number" value=${pct} onInput=${e => setPct(+e.target.value)} min="0" max="100"/>${cmd("set %", "lights_dim", { percent: pct })}</div>
+          <div class="cmd">${cli("lights_dim", { percent: pct })}</div>
+          <h2>commands · strip only</h2>
+          <div class="row">${cmd("warm", "strip_temp", { percent: 0 })}${cmd("cool", "strip_temp", { percent: 100 })}${cmd("fade 5 → 100", "strip_fade", {})}${cmd("strip off", "strip_set", { on: false })}</div>
+          <div class="cmd">${cli("strip_temp", { percent: 0 })}</div>
+          <h2>commands · demo</h2>
+          <div class="row">${cmd("the show (25 s)", "light_show", {})}${cmd("red / blue on 'special' 5 s", "hue_signal", { light: "special", seconds: 5 })}${cmd("make the fire picture", "dog_on_fire", {})}${cmd("read every light", "lights_status", {})}</div>
+          <div class="cmd">${cli("light_show", {})}</div>
+          ${last && html`<div class="mono" style=${{ marginTop: 6 }}>${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || last.result.file || JSON.stringify(last.result).slice(0, 140))) : last.error}</div>`}
         </div>
         ${status && html`<div class="panel"><h2>state · read back</h2><div class="status">
-          ${status.hue.map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.room} · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}
+          ${status.hue.filter(l => l.room === "Living room").map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}
           <div><b>strip</b> · ${status.strip.error ? status.strip.error : `${status.strip.on ? "on" : "off"} · ${status.strip.brightness_pct}% · temp ${status.strip.temp_pct}%`}</div>
         </div></div>`}
         <div class="panel"><h2>receipts · ledger.jsonl</h2><div class="ledger">
