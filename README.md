@@ -13,6 +13,7 @@ Pre-build. The agent is defined in `docs/SCOPE-LOCK.md` (open).
 | File | What |
 |---|---|
 | `CLAUDE.md` | How we build here. Read first. |
+| `docs/PLAN.md` | The day on one page, and what done looks like. Read at 9:00. |
 | `docs/BRIEF.md` | The brief, rubric, and schedule, verbatim. |
 | `docs/SCOPE-LOCK.md` | The one agent: job, apps, steps, cuts, stack. |
 | `docs/RELIABILITY-BRIEF.md` | The submission's system and reliability brief. |

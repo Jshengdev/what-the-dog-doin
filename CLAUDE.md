@@ -28,6 +28,7 @@ Execution plus reliability is 55%. A boring agent that provably works beats a cl
 
 ## Read first (in order)
 
+0. [`docs/PLAN.md`](./docs/PLAN.md): the day on one page and the definition of done. Read at 9:00.
 1. [`docs/BRIEF.md`](./docs/BRIEF.md): the brief, rubric, and schedule, verbatim.
 2. [`docs/SCOPE-LOCK.md`](./docs/SCOPE-LOCK.md): the ONE agent. Job, apps, steps, crystal I/O, CUT list, stack. **Johnny fills this. Read it before every build session. If it is empty, the session is sharpening, not building.**
 3. [`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md): the submission doc. Fill it as we build, not at 3:45.
