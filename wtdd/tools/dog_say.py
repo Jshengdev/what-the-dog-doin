@@ -61,8 +61,12 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None) ->
     if file_down:
         content += [{"type": "text", "text": "picture 1, looking down at the floor:"}, _part(file_down)]
     content += [{"type": "text", "text": ("picture 2, looking up at the room" if file_down else "this is now") + ". what do you see?"}, _part(file)]
+    system = SYSTEM
+    fixes = corrections()
+    if fixes:   # what the housemates said the dog got wrong before: true, and part of the next call
+        system += " The housemates corrected earlier reports, and they are right: " + " | ".join(fixes) + "."
     t0 = time.perf_counter()
-    out = generate("watch", [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}],
+    out = generate("watch", [{"role": "system", "content": system}, {"role": "user", "content": content}],
                    max_tokens=160, temperature=0.3, response_format={"type": "json_object"})
     raw = out["text"].strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
@@ -84,6 +88,20 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None) ->
     ms = round((time.perf_counter() - t0) * 1000)
     log("watch", f"saw: {text}", person=person, out_of_place=len(items), pick=pick, why=why, baseline=bool(baseline), model=out["model"], ms=ms)
     return {"text": text, "person": person, "out_of_place": items, "pick": pick, "why": why, "model": out["model"], "ms": ms}
+
+
+def corrections(n: int = 5) -> list[str]:
+    """The housemates' last n corrections from <repo>/state.json (wtdd/chat/listen.py writes them), as prompt lines."""
+    import json
+    from ..config import ROOT
+    f = ROOT / "state.json"
+    if not f.exists():
+        return []
+    out = []
+    for c in (json.loads(f.read_text()).get("corrections") or [])[-n:]:
+        said = (c.get("corrects") or {}).get("said") or ""
+        out.append(f'the dog said "{said[:80]}" and a housemate replied "{c.get("text", "")[:80]}"')
+    return out
 
 
 def tidy_path(look: str, stop: int | None = None) -> str:

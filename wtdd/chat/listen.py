@@ -9,7 +9,10 @@ Run: python -m wtdd.chat listen [--dry-run] [--every 2] [--listen-s 120] [--once
 Facts. No replay at boot: the watermark starts at MAX(ROWID). WTDD_LISTEN_S (default 120) is the armed window and any
 recognized message re-arms it. Who may wake the dog: any member while HOUSEMATES is empty (one WARN), else the listed
 handles; from-me rows only with WTDD_ALLOW_SELF=1 (Johnny's phone shares the dog's account), and even then the dog's
-own posts are refused by confirmed guid and by the opening words of its replies. WTDD_ROUND=dog makes the round the
+own posts are refused by confirmed guid and by the opening words of its replies. A housemate's reply that starts like a
+correction ("that's socks", "not a bird", "actually ...") within 30 min of the dog's last posted look is a
+chat.correction row, is appended to state.json, is acknowledged with "noted: ...", and the next look's prompt carries
+it (the vision model is told what the housemates said it got wrong). WTDD_ROUND=dog makes the round the
 real dog's: the wake starts the API's path follower (the dog must be calibrated on the remote first) and the field
 follows the dog's believed pose; unset, the entity walks the drawn path and the dog is hand-driven. WTDD_WAKE_SHOW=1 makes a wake run the
 demo in Johnny's order (dog_on_fire picture, "dog doin", the walk with a look-and-say at every stop on the map: nod,
@@ -20,18 +23,24 @@ reported to the group as its class and message, never faked. Live wake demo rece
 README.md): "what teh dog doin" recognized at 0.94, picture 3.4 s, walk 63.6 s, 3 posts, 3 read-back
 guids, 0 duplicates."""
 from __future__ import annotations
+import json
+import re
 import time
 from typing import Any, Callable
 
 from .. import commands as cmds
 from .. import config
-from ..ledger import append, log
+from ..ledger import append, log, rows as ledger_rows
 from . import db, memory
 from .housemates import HOUSEMATES, name as hname
-from .triggers import commands as command_list, is_wake, match_command, wake_phrases
+from .triggers import commands as command_list, is_wake, match_command, normalize, wake_phrases
+
+CORRECTION = re.compile(r"^(its|it s|thats|that s|those are|these are|that is|no|nope|wrong|actually|not)\b")
+CORRECTION_WINDOW_S = 1800   # a correction counts within this long after the dog's last post
+STATE = config.ROOT / "state.json"
 
 Poster = Callable[[str, str, str, str | None, str | None], Any]   # (guid, trigger_key, kind, text, file)
-OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "here's what i see", "yo, we don't know", "ok, done listening",
+OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "here's what i see", "yo, we don't know", "noted:", "ok, done listening",
                "living room lights", "did:", "listening for")   # how the dog's own text posts begin
 
 
@@ -135,9 +144,38 @@ class Listener:
             self.look_and_say(m)
         self.say(f"done:{m['guid']}", "dog done" + (f" ({walked})" if walked else ""))
 
+    def correction(self, m: dict[str, Any]) -> bool:
+        """A housemate correcting the dog's last report ("that's socks, not a bird"): one chat.correction row naming
+        what it corrects (the last posted look: sentence, file, detector counts), appended to state.json so the next
+        look's prompt carries it (wtdd/tools/dog_say.py), and acknowledged in the chat. Only within CORRECTION_WINDOW_S
+        of the dog's last post, armed or not."""
+        if not CORRECTION.match(normalize(m["text"])):
+            return False
+        looks = [r for r in ledger_rows(300) if r.get("tool") == "chat.post" and r.get("ok") and (r.get("args") or {}).get("file")]
+        if not looks:
+            return False
+        last = looks[-1]
+        age = time.time() - time.mktime(time.strptime(last["ts"], "%Y-%m-%dT%H:%M:%S"))
+        if age > CORRECTION_WINDOW_S:
+            return False
+        a = last["args"]
+        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": hname(m["sender"]), "text": m["text"][:200],
+                 "corrects": {"said": a.get("text"), "file": (a.get("file") or "").split("/")[-1], "at": last["ts"]}}
+        state = json.loads(STATE.read_text()) if STATE.exists() else {}
+        state.setdefault("corrections", []).append(entry)
+        STATE.write_text(json.dumps(state, indent=1) + "\n")
+        append({"step": "chat.correction", "agent": "central", "tool": "chat.correction", "app": "imessage", "ok": True,
+                "args": {"from": m["sender"], "text": m["text"][:200], "guid": m["guid"], "corrects": entry["corrects"]},
+                "state_before": None, "state_after": {"corrections": len(state["corrections"])}, "response_or_error": None, "latency_ms": 0})
+        log("chat", "CORRECTION", by=entry["by"], text=m["text"][:60], corrects=entry["corrects"]["said"][:40] if entry["corrects"]["said"] else "")
+        self.say(f"fix:{m['guid']}", f"noted: {m['text'][:120]}")
+        return True
+
     def handle(self, m: dict[str, Any]) -> None:
         text = m["text"]
         if not text or not self.allowed(m):
+            return
+        if self.correction(m):
             return
         wake = is_wake(text)
         if not self.armed:
