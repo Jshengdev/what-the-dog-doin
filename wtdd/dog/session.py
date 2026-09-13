@@ -11,8 +11,10 @@ drive() is hold-to-move: the remote refreshes a velocity every 200 ms while a ke
 MOVE_HZ and sends StopMove 0.6 s after the last refresh or on stop(). Speeds are capped at DRIVE_MAX.
 
 Where it thinks it is: calibrate(p, heading) ties the odometry pose now to a map point (wtdd/dog/nav.py); state() then
-carries "map": {p, heading_deg}. follow(path, stops) is a task that feeds nav.steer velocities into the same drive loop,
-waypoint by waypoint, pausing at the map's stops until resume(); stop() cancels it. One dog.calibrate and one dog.follow
+carries "map": {p, heading_deg}. follow(path, stops) switches the dog's obstacle avoidance on (read back, refused
+otherwise) and is a task that feeds nav.steer velocities into the same drive loop, waypoint by waypoint, pausing at the
+map's stops until resume(); stop() cancels it. With avoidance on, the drive loop sends velocities through the
+OBSTACLES_AVOID service (MOVE 1003, no ack) instead of SPORT Move; the state read-back is the receipt. One dog.calibrate and one dog.follow
 row; a failed or cancelled follow says so in state().follow.error.
 
 The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-13:
@@ -108,7 +110,13 @@ class DogSession:
     def state(self) -> dict[str, Any]:
         st = self.body.state() if self.body else None
         return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st,
-                "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state}
+                "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state,
+                "avoid": self.body._avoid if self.body else None}
+
+    def avoid(self, on: bool) -> bool:
+        """The dog's own obstacle avoidance, with read-back (wtdd/dog/body.py avoid). While it is on, every velocity this
+        session sends (hold-to-drive and the follower) goes through the avoidance service instead of the sport service."""
+        return self.run(self.with_body(lambda b: b.avoid(on)))
 
     # ---- where it thinks it is (wtdd/dog/nav.py)
     def map_pose(self, st: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -137,6 +145,8 @@ class DogSession:
         if len(path) < 2:
             raise ValueError("the map path has fewer than 2 points")
         self.run(self._ensure())
+        if not self.body._avoid:          # never follow blind: avoidance on and read back first, or the follow is refused
+            self.avoid(True)
         pose = self.map_pose()
         start = nav.nearest_index(path, pose["p"]) if from_nearest else 0
         self.follow_state = {"active": True, "i": start, "n": len(path), "stops": stops, "stopped_at": None, "resume": False,
@@ -231,7 +241,7 @@ class DogSession:
             try:
                 fresh = time.monotonic() - self.vel_t < DRIVE_HOLD_S and any(abs(v) > 0 for v in self.vel)
                 if fresh:
-                    await self.body._tick("sport", *self.vel)
+                    await self.body._tick("avoid" if self.body._avoid else "sport", *self.vel)
                     self.moving = True
                     await asyncio.sleep(1 / MOVE_HZ)
                 else:
