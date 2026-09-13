@@ -20,12 +20,12 @@ The trigger is a real text in the housemates' iMessage group (THE CASTLE), read 
 | 1 | the phrase wakes the dog (fuzzy: "what teh dog doin" scores 0.94) | iMessage (read) | `wtdd/chat/listen.py` | `chat.wake` |
 | 2 | the picture lands in the group | iMessage (write) | `dog_on_fire`, post keyed `fire:<guid>` | `chat.gate`, `chat.claim`, `chat.post` with the read-back guid |
 | 3 | "dog doin" | iMessage (write) | post `doin:<guid>` | `chat.post` |
-| 4 | the round: the entity walks the drawn path in real time, five living-room lights follow it by a proximity field, closer is brighter, other rooms dim; the dog walks the same route | Hue (cloud), Tuya strip (local) | `walk_path` (`wtdd/field.py`) | `field.walk` plus one `lights.set` / `lights.tuya_set` per write, each with the state read back |
+| 4 | the round: the five living-room lights follow the body by a proximity field, closer is brighter, other rooms dim. `WTDD_ROUND=dog`: the dog drives the recorded route itself on its odometry with its own obstacle avoidance on, and the field follows where it believes it is. `WTDD_ROUND=entity`: a simulated entity walks the drawn path in real time and the dog is hand-driven | Unitree Go2, Hue (cloud), Tuya strip (local) | `walk_path` (`wtdd/field.py`), `POST /dog/follow` (`wtdd/dog/nav.py`, `wtdd/dog/session.py`) | `field.walk`, `dog.follow`, `dog.avoid`, plus one `lights.set` / `lights.tuya_set` per write, each with the state read back |
 | 5 | at every stop drawn on the map: nod, photograph (IMU-checked, 15 degrees nose-up), one sentence from the vision model as JSON (say, person, out_of_place), posted with the photo | Unitree Go2 (WebRTC), OpenRouter, iMessage | `dog_say` (`dog_look` + vision + `chat_post`), post `say:<guid>:<stop>` | `dog.look`, `dog.frame` (sha256), `llm.generate`, `chat.post` |
 | 6 | a person in the frame: "yo, we don't know this guy", then the living room strobes red and blue and the strip goes to 100 | iMessage, Hue, Tuya | `light_alarm`, post `alarm:<guid>:<stop>` | `chat.post`, `lights.signal` per light, `lights.tuya_set` |
 | 7 | "dog done", with any failure named in the message | iMessage (write) | post `done:<guid>` | `chat.post` |
 
-The dog is driven along the route by hand with its physical controller while the entity on the map drives the lights; the Go2's Wi-Fi driver exposes no navigation (see Ceilings). Anyone in the frame counts as a stranger: recognizing housemates is not built.
+**Where it thinks it is.** The Go2's Wi-Fi driver exposes no navigation, so the map knowledge is ours: one calibration ties the dog's odometry (20 Hz, drifts) to a map point and heading (`wtdd/dog/nav.py`, 108.5 px per metre). On the remote the dog is an orange dot with a cone for where it points; drag the dot to where it really is, drag the cone tip to where it looks, and that is a `dog.calibrate` row. **Teach the route by driving:** "record route" traces the believed position while you drive with the controller, "mark stop here" drops the stops, "stop & save route" writes the thinned trace as the map's path. **Replay:** "follow the path" drives it waypoint by waypoint (proportional steering, 0.3 m/s, avoidance on and read back first, a waypoint not reached in 30 s fails loud), pausing at each stop. A path with a point outside every room or a jump over 300 px is refused by name before anything moves. Anyone in the frame counts as a stranger: recognizing housemates is not built.
 
 ## Run it
 
@@ -37,6 +37,7 @@ python -m wtdd list                # every tool, one file each; python -m wtdd <
 python -m wtdd dog_say             # nod, photo, sentence, posted to the castle
 python -m wtdd.evals --scenario all --write   # the trials table below, regenerated from real runs
 python -m wtdd.watch               # the detector over the live camera: boxes and counts on the remote
+python -m wtdd.evals --scenario follow --n 3   # the dog replays the recorded route on its own, graded from dog.follow rows
 python -m wtdd ask "dim the living room and make the strip warm"   # the model picks the tools
 ```
 
@@ -66,7 +67,7 @@ Two models, both through OpenRouter (`wtdd/llm.py`, no retries, no fallback mode
 | iMessage (THE CASTLE group, 8 members) | poll `~/Library/Messages/chat.db` by ROWID; send text and photos with osascript; confirm every send by reading the from-me row back | read + write | this Mac's own Messages account (Full Disk Access, Automation) | live |
 | Philips Hue (4 living-room lights) | set on/brightness, native red/blue alternating signal, read back after every write | write + read | Remote Hue API OAuth token in `.env` (`python -m wtdd.hue remote-refresh`) | live |
 | Tuya LED strip (WT1) | on/brightness/temperature over local protocol 3.5, read back (dps 20/22/23) | write + read | device id + local key in `.env` | live |
-| Unitree Go2 | one WebRTC session: sport commands (allowlisted), body pose, 20 Hz state with odometry and IMU, live camera frames | write + read | LAN, no AES key on this firmware | live |
+| Unitree Go2 | one WebRTC session: sport commands (allowlisted), body pose, velocity through its obstacle-avoidance service (read back), 20 Hz state with odometry and IMU, live camera frames, LiDAR voxel stream (built, live test pending) | write + read | LAN, no AES key on this firmware | live |
 | OpenRouter | vision JSON on the frame; function calling over the tools | read | API key | live |
 
 ## How we know it works
@@ -161,7 +162,9 @@ Per trial (graded from the rows each trial appended to `ledger.jsonl`):
 |---|---|---|---|
 | Hue cloud write fails or times out | the write's row has `ok: false`; the field counts it | counted, never retried; "dog done (n light write(s) failed, see the ledger)" is what the chat gets | `walk` trials count writes and failures |
 | Tuya strip does not answer | read-back after the nowait write fails | same as above | `walk` trials |
-| dog unreachable or session dropped | probe fails before connect; a state stream older than 5 s marks the session stale | the look posts "couldn't look: <error>"; the next call reconnects once, logged; no loop | `look` trials record `fired`, `pitch_deg` |
+| dog unreachable or session dropped | probe fails before connect; a state stream older than 5 s marks the session stale | the look posts "couldn't look: <error>"; the next call reconnects once, logged; no loop; the remote then asks for the dog's position to be confirmed (a power cycle resets the odometry frame) | `look` trials record `fired`, `pitch_deg` |
+| odometry drift while following | the believed position walks away from the real one; a waypoint is not reached in 30 s | the follow fails loud with the waypoint and distance; a human drags the dot back (a `dog.calibrate` row each time); no retry | `follow` trials; corrections counted from the ledger |
+| a stray or impossible path point | `check_path`: outside every room, or a jump over 300 px | save refuses and names it; record reports it; follow and the walk refuse to run | `wtdd/field.py` |
 | tilt does not fire (this firmware ignores the pose after a long idle or right after driving) | IMU pitch at capture below 8 degrees | one StandUp-warmed retry, then reported as `fired: false` with the real frame anyway | `look` trials |
 | vision returns no JSON or an empty sentence | parsed and validated; raises | posted as the error; no canned sentence | `look` / `person` trials |
 | vision misses the planted object | the sentence does not name it | the trial is a fail, counted | `look` trials |
@@ -179,6 +182,8 @@ Every number comes from the trials table above or from these commands; none is t
 | round seconds, writes, errors, room crossings, per-light latency | `walk` rows of the trials table; `python -m wtdd walk_path` prints the same |
 | tilt pitch at capture, attempts, vision latency | `look` rows of the trials table |
 | posts confirmed vs duplicates | `grep '"tool": "chat.post"' ledger.jsonl \| wc -l` against `grep -c '"tool": "chat.claim"' ledger.jsonl` |
+| position corrections and their size (odometry drift as the human saw it) | `grep '"tool": "dog.calibrate"' ledger.jsonl` and the jump between `state_before.p` and `state_after.map.p` per row |
+| route replay: waypoints reached, end residual | `follow` rows of the trials table; `grep '"tool": "dog.follow"' ledger.jsonl` |
 | one live wake, end to end | `python -m wtdd ledger_tail n=60` right after a housemate's text |
 
 ### Idempotence
@@ -193,7 +198,7 @@ Re-running never re-posts: every post is claimed on the guid of the message that
 
 Known ceilings, stated instead of faked:
 
-- **No navigation.** The Wi-Fi driver (`unitree_webrtc_connect` 2.2.0) names 17 LiDAR/SLAM/navigation topics and implements a point-cloud subscribe only; there is no waypoint or go-to-pose call, and `TrajectoryFollow` is absent from the motion controller this dog runs (`mcf`). The dog is hand-driven along the drawn route; the entity on the map drives the lights. Odometry (20 Hz, drifts) could put a dot on the map in about an hour; planned routes around furniture are days, not hours.
+- **No planner.** The Wi-Fi driver (`unitree_webrtc_connect` 2.2.0) names 17 LiDAR/SLAM/navigation topics and implements a point-cloud subscribe only; there is no waypoint or go-to-pose call, and `TrajectoryFollow` is absent from the motion controller this dog runs (`mcf`). What exists is ours: odometry tied to the map by a human calibration, a recorded route, a proportional follower, and the dog's own obstacle avoidance for what is in front of it. It does not plan around furniture it has not been driven past, and drift is corrected by a person dragging the dot. The LiDAR occupancy overlay (`wtdd/dog/lidar.py`, `GET /dog/lidar`) is built and verified offline against the driver's frame format; its live test is pending.
 - **The local detector is observability, not a gate.** `python -m wtdd.watch` runs YOLO11n (open source, COCO's 80 classes) in its own process over the live frames and shows boxes and counts on the remote, with a `watch.detect` row whenever what is in view changes. COCO names cup, bowl, bottle, chair, person, not socks or "out of place", so the sentence still comes from the vision model, and nothing in the round acts on the detector.
 - **No face recognition.** Anyone in the frame is a stranger tonight.
 - **Zones are hand-drawn**, not scanned. The path, the stops and the light positions are placed on a hand-drawn floor plan.
@@ -204,6 +209,8 @@ Known ceilings, stated instead of faked:
 | use | where | entry |
 |---|---|---|
 | one task, one file | `wtdd/tools/` | `python -m wtdd <name> k=v`, `POST /tools/<name>`, MCP |
+| where it thinks it is: odometry to map, steering | `wtdd/dog/nav.py`, `wtdd/dog/session.py` | the remote's dog panel; `POST /dog/calibrate`, `/dog/record`, `/dog/follow` |
+| the LiDAR band on the map (live test pending) | `wtdd/dog/lidar.py` | `POST /dog/lidar {on}` then `GET /dog/lidar` |
 | the round's eye: look, vision JSON, post | `wtdd/tools/dog_say.py` | `python -m wtdd dog_say` |
 | the second eye: YOLO11n boxes on the live feed, in its own process | `wtdd/watch.py` | `python -m wtdd.watch` |
 | the alarm | `wtdd/tools/light_alarm.py` | `python -m wtdd light_alarm` |

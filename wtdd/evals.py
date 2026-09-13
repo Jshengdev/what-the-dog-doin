@@ -7,6 +7,7 @@ scenario keeps its newest trials) and regenerates the README section between the
   python -m wtdd.evals --scenario look --n 3 --object cup    nod, photo, sentence, with a planted object in view (dog needed)
   python -m wtdd.evals --scenario person --n 3               nod, photo, sentence, with someone standing in frame (dog needed)
   python -m wtdd.evals --scenario twice                      the never-twice gates: a second wake while armed, a second claim
+  python -m wtdd.evals --scenario follow --n 3               the dog replays the recorded route on its own (dog at the start; not part of all)
   python -m wtdd.evals --scenario walk,twice --write         a comma list of scenarios; --write regenerates README.md's table
   python -m wtdd.evals --scenario all --write                everything, then write README.md
 
@@ -34,7 +35,8 @@ from .ledger import log
 README = config.ROOT / "README.md"
 EVALS = config.ROOT / "evals.json"   # every scenario's newest rows (the remote reads it at GET /evals)
 START, END = "<!-- trials:start -->", "<!-- trials:end -->"
-ORDER = ["twice", "walk", "look", "person"]
+ORDER = ["twice", "walk", "look", "person", "follow"]
+API = "http://127.0.0.1:7788"
 
 
 def living_room_ids() -> set[str]:
@@ -118,6 +120,48 @@ def run_look(n: int, obj: str | None, person: bool) -> list[dict[str, Any]]:
     return res
 
 
+def run_follow(n: int) -> list[dict[str, Any]]:
+    """The dog replays the map's path from its start on its own (POST /dog/follow, avoidance on), graded from the
+    dog.follow row the API writes: pass when the follower ended done with no error; the residual is the believed end
+    position against the path's last point. The eval resumes at stops itself (no look here). Place the dog at the
+    route's start before each trial; a loop route ends where it starts."""
+    import math
+    import requests
+    path = json.loads((config.ROOT / "ui" / "map.json").read_text())["path"]
+    res = []
+    for i in range(n):
+        def go():
+            r = requests.post(f"{API}/dog/follow", json={}, timeout=15).json()
+            if not r.get("ok"):
+                raise RuntimeError(r.get("error"))
+            t0 = time.monotonic()
+            while True:
+                st = requests.get(f"{API}/dog/state", timeout=5).json()
+                f = st.get("follow") or {}
+                if f.get("stopped_at") is not None:
+                    requests.post(f"{API}/dog/resume", json={}, timeout=5)
+                if not f.get("active"):
+                    return {**f, "end": (st.get("map") or {}).get("p")}
+                if time.monotonic() - t0 > 600:
+                    raise TimeoutError("the follow did not end within 600 s")
+                time.sleep(0.5)
+        out, err, rows, secs = trial(go)
+        bad = unsafe(rows)
+        if out:
+            ok = bool(out.get("done")) and not out.get("error")
+            why = out.get("error") or ""
+            resid = round(math.dist(out["end"], path[-1])) if out.get("end") else None
+            detail = f"waypoints {len(out.get('reached', []))} of {out.get('n')} from {out.get('i')}, end {resid} px from the path's last point ({round(resid / 108.5, 2) if resid is not None else '?'} m), stops {out.get('stops')}"
+        else:
+            ok, why, detail = False, err, ""
+        grade = "unsafe" if bad else ("pass" if ok else "fail")
+        res.append({"scenario": "follow", "trial": i + 1, "grade": grade, "why": "; ".join(bad) or why, "seconds": secs, "detail": detail})
+        log("evals", f"follow {i + 1}/{n} {grade}", why=why, seconds=secs)
+        if i + 1 < n:
+            time.sleep(3)
+    return res
+
+
 def run_twice() -> list[dict[str, Any]]:
     """Two wakes in one armed window produce one show; a second claim of one key is refused. No devices, no posts."""
     import os
@@ -150,10 +194,12 @@ def table(res: list[dict[str, Any]]) -> str:
     what = {"walk": "the round: entity along the map's path, 5 living-room lights follow, all written and read back",
             "look": "nod + photo + sentence with a planted object in view; pass = tilt fired (IMU) and the sentence names it",
             "person": "nod + photo + sentence with someone in frame; pass = the vision JSON says person",
-            "twice": "never twice: 2 wakes in one window make 1 show; a second claim of one key is refused"}
+            "twice": "never twice: 2 wakes in one window make 1 show; a second claim of one key is refused",
+            "follow": "the dog replays the recorded route on its own from its start, avoidance on; pass = every waypoint reached, no error; residual = end vs the last point"}
     lines = ["| scenario | what it checks | trials | pass | fail | unsafe | ran | command |", "|---|---|---|---|---|---|---|---|"]
     cmds = {"walk": "python -m wtdd.evals --scenario walk --n 3", "look": "python -m wtdd.evals --scenario look --n 3 --object cup",
-            "person": "python -m wtdd.evals --scenario person --n 3", "twice": "python -m wtdd.evals --scenario twice"}
+            "person": "python -m wtdd.evals --scenario person --n 3", "twice": "python -m wtdd.evals --scenario twice",
+            "follow": "python -m wtdd.evals --scenario follow --n 3"}
     for s, rs in by.items():
         g = [r["grade"] for r in rs]
         lines.append(f"| {s} | {what[s]} | {len(rs)} | {g.count('pass')} | {g.count('fail')} | {g.count('unsafe')} | {max(r.get('ran', '') for r in rs)} | `{cmds[s]}` |")
@@ -191,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--write", action="store_true", help="regenerate the trials section of README.md")
     a = p.parse_args(argv)
     want = set(a.scenario.split(","))
-    unknown = want - {"walk", "look", "person", "twice", "all"}
+    unknown = want - {"walk", "look", "person", "twice", "follow", "all"}
     if unknown:
         raise SystemExit(f"unknown scenario {sorted(unknown)}")
     res: list[dict[str, Any]] = []
@@ -203,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
         res += run_look(a.n, a.object, person=False)
     if want & {"person", "all"}:
         res += run_look(a.n, None, person=True)
+    if want & {"follow"}:              # not in "all": it drives the dog around the house; run it on purpose
+        res += run_follow(a.n)
     ran = time.strftime("%Y-%m-%d %H:%M")
     for r in res:
         r["ran"] = ran
