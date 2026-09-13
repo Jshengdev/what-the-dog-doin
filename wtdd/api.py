@@ -13,6 +13,8 @@
   POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
   POST /dog/avoid {on}            the dog's obstacle avoidance on/off with read-back (the follower turns it on itself)
+  GET  /dog/lidar                 the dog's LiDAR band in map pixels {on, n, age_ms, frame, points_px, why?} (polled every 500 ms while
+                                  connected); POST /dog/lidar {on} switches the voxel stream on/off (wtdd/dog/lidar.py)
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
   POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
@@ -86,6 +88,9 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/dog/state":
             from .dog.session import DogSession
             return self._json(200, DogSession.get().state())
+        if u.path == "/dog/lidar":
+            from .dog.session import DogSession
+            return self._json(200, DogSession.get().lidar())
         if u.path == "/dog/frame.jpg":
             from .dog.session import DogSession
             try:
@@ -111,7 +116,7 @@ class H(BaseHTTPRequestHandler):
             MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), zones=len(data.get("zones", [])))
             return self._json(200, {"ok": True})
-        if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid"):
+        if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid", "/dog/lidar"):
             import math
             from .dog import nav
             from .dog.session import DogSession
@@ -132,6 +137,8 @@ class H(BaseHTTPRequestHandler):
                     out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
                 elif u.path == "/dog/avoid":          # {on: true|false}: the dog's own obstacle avoidance, read back
                     out = {"avoid": s.avoid(bool(body.get("on", True)))}
+                elif u.path == "/dog/lidar":          # {on: true|false}: the dog's LiDAR voxel stream (GET /dog/lidar reads it)
+                    out = {"lidar": s.lidar(bool(body.get("on", True)))}
                 else:
                     out = {"follow": s.resume()}
                 return self._json(200, {"ok": True, **out})

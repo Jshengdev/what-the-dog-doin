@@ -24,7 +24,8 @@ The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-
          down-then-up pair: a single cold Euler does nothing and re-sending it every 2 s does nothing.
   sit:   Sit, 1.8 s, frame at 48 deg up, RiseSit.
 Frames land in ~/Pictures/wtdd/look-<kind>.jpg (the API serves them at /pictures/<name>). snapshot() is the
-un-receipted newest frame behind GET /dog/frame.jpg, the remote's live view at a few frames per second.
+un-receipted newest frame behind GET /dog/frame.jpg, the remote's live view at a few frames per second. lidar(on) is
+the dog's own LiDAR band on the map behind GET/POST /dog/lidar (wtdd/dog/lidar.py), also un-receipted.
 """
 from __future__ import annotations
 import asyncio
@@ -36,7 +37,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from ..ledger import log, step
-from . import nav
+from . import lidar, nav
 from .body import MOVE_HZ, Body
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
@@ -117,6 +118,25 @@ class DogSession:
         """The dog's own obstacle avoidance, with read-back (wtdd/dog/body.py avoid). While it is on, every velocity this
         session sends (hold-to-drive and the follower) goes through the avoidance service instead of the sport service."""
         return self.run(self.with_body(lambda b: b.avoid(on)))
+
+    def lidar(self, on: bool | None = None) -> dict[str, Any]:
+        """GET/POST /dog/lidar. on=True switches the dog's LiDAR voxel stream on (connecting first), on=False off, None
+        reads. Returns {on, n (frames), errors, age_ms, frame, points_px, why?}: points_px is the newest frame's
+        floor-to-head band in map pixels through the calibration (wtdd/dog/lidar.py), [] with `why` when there is no
+        frame yet, the stream is off, or the dog is not calibrated. No ledger row: a read, like /dog/state."""
+        if on is True or (on is False and self.body is not None):
+            self.run(self.with_body(lambda b: b.lidar_on() if on else b.lidar_off()))
+        if self.body is None:
+            return {"on": False, "n": 0, "errors": 0, "age_ms": None, "frame": None, "points_px": [], "why": "not connected"}
+        lp = self.body.lidar_points()
+        out = {k: lp[k] for k in ("on", "n", "errors", "age_ms", "frame", "utlidar_pose")}
+        st = self.body.state()
+        if lp["points"] is None:
+            return {**out, "points_px": [], "why": "no frame yet" if lp["on"] else "lidar off"}
+        if not self.cal or not st or not st.get("position") or not st.get("rpy"):
+            return {**out, "points_px": [], "why": "not calibrated"}
+        xy = lidar.top_down(lp["points"])
+        return {**out, "n_xy": len(xy), "points_px": lidar.to_map_points(xy, self.cal, st["position"], st["rpy"][2])}
 
     # ---- where it thinks it is (wtdd/dog/nav.py)
     def map_pose(self, st: dict[str, Any] | None = None) -> dict[str, Any] | None:
