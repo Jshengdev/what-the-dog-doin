@@ -428,11 +428,12 @@
     }
   ],
   "entity": {
-    "radius_px": 220,
+    "radius_px": 350,
     "speed_px_s": 60,
     "falloff": 1.6,
     "other_room_factor": 0.3,
-    "samples": 12
+    "samples": 12,
+    "gain": 2.1
   },
   "stops": []
 }
