@@ -128,7 +128,7 @@ This is hardware in a real house, so we tested it the way you'd test a person: w
 
 **The route, over and over.** The dog replays the recorded route on its own from its start, with its obstacle avoidance on when the service answers (it did until a battery swap; after that the runs were driven without it, by explicit choice, and every `dog.follow` row records which). The receipt is a `dog.follow` row per run with the waypoints reached and where it believed it ended. The best run today: 23 of 23 waypoints in 73.9 s, ending 0.25 m from the route's end; the demo take: 14 of 23, stopped 56 px short of a waypoint, reported in the chat. Drift is corrected by a person dragging the dot; each correction is a `dog.calibrate` row (16 today, median 0.22 m).
 
-<p align="center"><img src="docs/media/route-replay.gif" alt="the dog replaying the recorded route, the orange dot riding the line" width="720"><br><sub>docs/media/route-replay.gif: the replay, sped up</sub></p>
+<p align="center"><img src="docs/media/lidar-on-map.png" alt="the map during a replay: the orange dog on the route, the field radius, the LiDAR dots" width="720"><br><sub>docs/media/lidar-on-map.png: a replay in progress, the dog's dot on the recorded route with the field around it and its LiDAR on the plan</sub></p>
 
 **Two eyes, and the second one checks the first.** The detector (YOLO11n, COCO classes) runs first and boxes the floor frame. Its labels go into the vision model's call with both frames. The model returns what's out of place, whether a person is there, which picture to send, and `detector_check`: on the real frame below the detector said "bird"; the model answered "it says bird but those are probably teri's socks" and that went into the message. Each look writes a `vision.check` row with both opinions side by side.
 
@@ -138,7 +138,7 @@ This is hardware in a real house, so we tested it the way you'd test a person: w
 
 **The stranger.** The detector's person box (with its confidence) is what arms the question. The dog posts the boxed photo with "who dis?!". The group's next answer is the verdict: "idk" and its kin mean "STRANGER DANGER!!!" three times and the room strobing red and blue; anything else stands it down. Every step is a row: `watch.detect`, `intruder.alarm`, `intruder.verdict`, `lights.signal`.
 
-<p align="center"><img src="docs/media/intruder.gif" alt="who dis, idk, stranger danger" width="720"><br><sub>docs/media/intruder.gif: the question, the verdict, the strobe</sub></p>
+The verdict, from the take's ledger: `intruder.verdict` at 15:18:22, "Idk", stranger; `lights.alarm` at 15:18:32, 5 signaled, 5 restored, 0 errors. The video shows the strobe.
 
 **The remote as the one screen.** Everything above is watched from one page: the map with the dog's believed position and the route, the live camera with the detector's boxes and the last look's two frames and sentence, the receipts printing as they happen, and the status of the dog, the lights, the group chat and the detector.
 
