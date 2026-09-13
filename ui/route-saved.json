@@ -1,98 +1,131 @@
 {
   "path": [
     [
-      505,
-      526
+      456,
+      399
     ],
     [
-      530,
-      475
+      429,
+      444
     ],
     [
-      487,
-      505
+      408,
+      491
     ],
     [
-      482,
-      550
+      390,
+      537
     ],
     [
-      503,
-      593
+      387,
+      586
     ],
     [
-      530,
-      635
+      386,
+      646
     ],
     [
-      563,
-      676
+      382,
+      698
     ],
     [
-      570,
-      727
+      350,
+      744
     ],
     [
-      567,
-      793
+      315,
+      776
     ],
     [
-      556,
-      850
+      275,
+      800
     ],
     [
-      533,
-      898
+      230,
+      823
     ],
     [
-      507,
-      949
+      196,
+      859
     ],
     [
-      486,
-      1007
+      166,
+      897
     ],
     [
-      467,
-      954
+      127,
+      922
     ],
     [
-      461,
-      904
+      141,
+      878
     ],
     [
-      510,
-      869
+      171,
+      841
     ],
     [
-      549,
-      827
+      210,
+      817
     ],
     [
-      565,
-      782
+      256,
+      801
     ],
     [
-      565,
-      730
+      301,
+      779
     ],
     [
-      533,
-      683
+      353,
+      750
     ],
     [
-      503,
-      637
+      385,
+      714
     ],
     [
-      502,
-      581
+      403,
+      654
     ],
     [
-      497,
+      405,
+      591
+    ],
+    [
+      407,
       536
+    ],
+    [
+      434,
+      497
+    ],
+    [
+      450,
+      478
     ]
   ],
-  "stops": [],
-  "note": "the route recorded by driving on 2026-09-13, saved from ui/map.json at the time; POST /map/restore puts it back, the page draws it faintly while drawing"
+  "stops": [
+    4,
+    13,
+    15
+  ],
+  "note": "the route recorded by driving on 2026-09-13, saved from ui/map.json at the time; POST /map/restore puts it back, the page draws it faintly while drawing",
+  "actions": {
+    "4": {
+      "look": "level",
+      "say": true,
+      "ask": false
+    },
+    "13": {
+      "look": "sit",
+      "say": true,
+      "ask": true
+    },
+    "15": {
+      "look": "tilt",
+      "say": true,
+      "ask": false
+    }
+  }
 }

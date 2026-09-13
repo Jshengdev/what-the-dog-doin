@@ -453,17 +453,20 @@
     15
   ],
   "actions": {
+    "4": {
+      "look": "level",
+      "say": true,
+      "ask": false
+    },
     "13": {
-      "look": "tilt",
-      "say": false
+      "look": "sit",
+      "say": true,
+      "ask": true
     },
     "15": {
       "look": "tilt",
-      "say": false
-    },
-    "4": {
-      "look": "tilt",
-      "say": false
+      "say": true,
+      "ask": false
     }
   }
 }
