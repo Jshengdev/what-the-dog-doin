@@ -113,6 +113,11 @@ The demo run at 15:16, from the ledger (`docs/evidence/ledger-take-2026-09-13.js
 4. 15:18:22 a housemate answers "Idk". The verdict row says stranger; "STRANGER DANGER!!!" lands three times; all four Hue lights and the strip strobe for five seconds and are put back exactly as they were (`lights.alarm`: 5 signaled, 5 restored, 0 errors).
 5. "dog done (couldn't walk the path: the dog's follow ended with: TimeoutError: waypoint 14 not reached in 30.0s …)". The failure is in the group chat, verbatim.
 6. 15:19:42, the socks, by hand: the detector says "bird"; the model: "it says bird but that is really a sock"; posted with the floor frame.
+7. 15:29:49, the cups, by hand at the coffee table: the nod's floor frame gets "bed" from the detector ("it says bed but that is really a couch"), the model picks the room frame, and the group gets, with the boxed photo: **"a can and a bottle and a pink cup on the coffee table. probably teris. put them in the dishwasher now. [detector: couch]"**.
+
+<p align="center"><img src="docs/media/cups-posted.jpg" alt="the photo the group received: the coffee table with a can, a bottle and a pink cup, the detector's couch box" width="720"><br><sub>docs/media/cups-posted.jpg: the exact picture posted to the castle at 15:29:49</sub></p>
+
+<p align="center"><img src="docs/media/eye-cups.png" alt="the eye panel at that moment: the live feed, both nod frames with the room frame outlined as sent, the sentence and the pick reason" width="720"><br><sub>docs/media/eye-cups.png: the eye panel for that look, "pick: shows the drinks left out"</sub></p>
 
 <p align="center"><img src="docs/media/eye-second-opinion.png" alt="the eye panel: the live feed, the detector's boxes, both nod frames and the sentence 'it says bird but that is really a sock'" width="720"><br><sub>docs/media/eye-second-opinion.png: the live camera, the detector's boxes (person 0.48, chairs), the two nod frames with the sent one outlined, and the sentence that corrected the detector</sub></p>
 
