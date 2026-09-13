@@ -81,10 +81,10 @@ class DogSession:
         self.moving = False
         self._driver: asyncio.Task | None = None
         self.cal: dict[str, Any] | None = None       # odometry <-> map tie (nav.calibration); None until "the dog is here"
-        self.recheck = False                         # set after a reconnect: a power cycle resets the odometry frame, so the tie may be stale
         if CAL_FILE.exists():   # a calibration survives an API restart, not a dog power cycle (the odometry frame resets then)
             self.cal = json.loads(CAL_FILE.read_text())
-            log("dog", "calibration loaded", file=CAL_FILE.name, map=self.cal.get("map"), at=self.cal.get("at"))
+            self.recheck = True   # loaded, not confirmed: the remote asks for the dog's position until someone drags it
+            log("dog", "calibration loaded, to be confirmed", file=CAL_FILE.name, map=self.cal.get("map"), at=self.cal.get("at"))
         self.follow_state: dict[str, Any] = {}       # the follower's live status (GET /dog/state .follow)
         self._follower: asyncio.Task | None = None
         self.rec: dict[str, Any] | None = None       # a route being recorded by driving: {points, marks, started}

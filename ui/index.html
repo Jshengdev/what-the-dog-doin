@@ -203,7 +203,7 @@ function App() {
         const hueOk = status && !status.error && Array.isArray(status.hue), stripOk = status && status.strip && !status.strip.error;
         const chatOn = chat?.alive, watchOn = watch && watch.age_ms != null && watch.age_ms < 3000;
         return html`
-          <div class=${"stat " + (dogOn ? "on" : dogStale ? "warn" : "")}><span class="sq"></span><b>dog</b><span>${dogOn ? `on · ${dog.calibrated ? "located" : "not located"}${dog.avoid ? " · avoid on" : ""}` : dogStale ? `stale · ${Math.round(age / 1000)} s` : "off"}</span></div>
+          <div class=${"stat " + (dogOn ? (dog.recheck ? "warn" : "on") : dogStale ? "warn" : "")}><span class="sq"></span><b>dog</b><span>${dogOn ? `on · ${dog.recheck ? "confirm its location (drag it)" : dog.calibrated ? "located" : "not located"}${dog.avoid ? " · avoid on" : ""}` : dogStale ? `stale · ${Math.round(age / 1000)} s` : "off"}</span></div>
           <div class=${"stat " + (hueOk && stripOk ? "on" : hueOk || stripOk ? "warn" : "")}><span class="sq"></span><b>lights</b><span>${status ? (hueOk && stripOk ? "online" : hueOk ? "strip offline" : stripOk ? "hue offline" : "offline") : "reading…"}</span></div>
           <div class=${"stat " + (chatOn ? "on" : "")}><span class="sq"></span><b>group chat</b><span>${chat ? (chatOn ? `${chat.group} · ${chat.pending ? "waiting for who dis" : chat.armed ? "armed" : "listening"}` : "listener down") : "…"}</span></div>
           <div class=${"stat " + (watchOn ? "on" : "")}><span class="sq"></span><b>detector</b><span>${watchOn ? `live · ${watch.ms} ms` : "off"}${watch?.intruder ? " · intruder watch armed" : ""}</span></div>`;
