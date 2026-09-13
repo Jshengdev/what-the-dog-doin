@@ -28,6 +28,20 @@ Where the ledger lives, what one record looks like, and the command that regener
 |---|---|---|---|
 | | | | |
 
+### Trials (pass / fail / unsafe)
+
+Each scenario run at least three times. Graded from before-and-after state read back from the apps and devices, never from the agent's own report.
+
+| Scenario | Trials | Pass | Fail | Unsafe | Command |
+|---|---|---|---|---|---|
+| | | | | | |
+
+### Prohibited actions (asserted after every run)
+
+| Never | Asserted how | Violations |
+|---|---|---|
+| | | |
+
 ### Numbers
 
 | Metric | Value | Source command |

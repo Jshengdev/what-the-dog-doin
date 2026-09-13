@@ -16,6 +16,8 @@ Pre-build. The agent is defined in `docs/SCOPE-LOCK.md` (open).
 | `docs/BRIEF.md` | The brief, rubric, and schedule, verbatim. |
 | `docs/SCOPE-LOCK.md` | The one agent: job, apps, steps, cuts, stack. |
 | `docs/RELIABILITY-BRIEF.md` | The submission's system and reliability brief. |
+| `docs/JUDGES.md` | Judge and host intel: what they build, post, and reward. |
+| `docs/TASTE.md` | The visual system for the demo UI. |
 
 ## Run it
 

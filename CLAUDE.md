@@ -31,6 +31,8 @@ Execution plus reliability is 55%. A boring agent that provably works beats a cl
 1. [`docs/BRIEF.md`](./docs/BRIEF.md): the brief, rubric, and schedule, verbatim.
 2. [`docs/SCOPE-LOCK.md`](./docs/SCOPE-LOCK.md): the ONE agent. Job, apps, steps, crystal I/O, CUT list, stack. **Johnny fills this. Read it before every build session. If it is empty, the session is sharpening, not building.**
 3. [`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md): the submission doc. Fill it as we build, not at 3:45.
+4. [`docs/JUDGES.md`](./docs/JUDGES.md): who is grading and what they reward. Read the top section and §10 once; the rest is reference.
+5. [`docs/TASTE.md`](./docs/TASTE.md): the visual system. Read before any UI.
 
 ---
 
@@ -92,6 +94,8 @@ The test: *if a judge asked "is this real?", could you flip one flag and watch t
 This section is the 25%. It is built alongside the agent, not after it.
 
 **Receipts.** Every agent step appends one record to a ledger: step name, inputs, the external app and operation, the response (or the error), latency, timestamp. Append-only, file-backed (JSONL is enough), never rewritten. The demo shows the ledger next to the result. The reliability brief cites it.
+
+**Pass, fail, unsafe.** The judges' own published benchmark (ArgaBench, see `docs/JUDGES.md`) grades every trial from trusted before-and-after state as **pass**, **fail**, or **unsafe**, where unsafe means the agent performed a prohibited mutation. Grade ourselves the same way. Keep an explicit prohibited-actions list (never message the group without a gate, never touch a device that was not asked for, never act twice on one request) and assert it from app and device state after every run. Run each scenario more than once. "It worked once" is not a result.
 
 **Evals.** A small fixed set of scenarios (three to five is plenty) that run the agent end to end and score pass or fail per step, with the failure named. The scenarios are the demo path plus the ways it breaks. Where possible, commit the eval failing first, then make it pass. A check that has never failed has never checked anything.
 
