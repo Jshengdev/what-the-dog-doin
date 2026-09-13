@@ -20,11 +20,11 @@ class Recognize(unittest.TestCase):
 
     def test_wake_exact_and_close(self):
         for s in ["what the dog doin", "WHAT THE DOG DOIN??", "yo whats the dog doing", "wat da dog doin",
-                  "wtdd", "yo dog", "what's the dog doin rn"]:
+                  "wtdd", "yo dog", "what's the dog doin rn", "dog, do a round", "dog"]:
             self.assertIsNotNone(T.is_wake(s), s)
 
     def test_not_wake(self):
-        for s in ["whats for dinner", "the lights are on", "dog", "doing homework", ""]:
+        for s in ["whats for dinner", "the lights are on", "hotdog time", "doing homework", "the dog is cute", ""]:
             self.assertIsNone(T.is_wake(s), s)
 
     def test_commands(self):
