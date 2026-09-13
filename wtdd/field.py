@@ -2,7 +2,7 @@
 much of it sits inside that radius, weighted toward the centre. One implementation, used by the chat's wake demo
 (tools.call("walk_path")) and by the remote's walk button (POST /tools/walk_path); the page only animates the dot.
 
-  python -m wtdd walk_path dry=true        compute and log every level, write nothing
+  python -m wtdd walk_path dry=true        compute and log every level, write nothing (writes = 0 in the row)
   python -m wtdd walk_path                 drive the real lights
   lamp:   score = (1 - d/R) ** falloff at the lamp's point
   strip:  the mean of that over `samples` points along its line (a graze at the edge is dim, a pass over the middle bright)
@@ -19,7 +19,8 @@ room starts dark and the first latency of each light is measured), the walk in r
 light to 0 again and wait. One field.walk ledger row with seconds, writes, errors, rooms crossed and the mean latency per
 light; every write is its own row, a failed write is counted and logged, never retried. While it runs, <repo>/field.json
 holds the entity's position, room, levels and current stop (atomic writes at HZ, removed at the end); the API serves it
-at GET /field and the remote draws the dot from it, whichever process runs the walk. Stops: map.json `stops` is a list
+at GET /field and the remote draws the dot from it, whichever process runs the walk; a field.json younger than BUSY_S
+means a walk is live and a second walk (the button during a chat round, or the reverse) is refused, never interleaved. Stops: map.json `stops` is a list
 of path point indices (double-click a path point on the remote); at each one the walk pauses and calls on_stop(index,
 point, room), the lights hold, then it resumes. The chat's wake sequence passes its look-and-say as on_stop; with no
 stops on the map it looks once at the end of the path. Measured on the live wake demo
@@ -40,6 +41,7 @@ from .ledger import log, step
 MAP = ROOT / "ui" / "map.json"
 HZ = 10.0
 FIELD = ROOT / "field.json"   # the running walk: p, here, levels, s, total, stop; written at HZ, removed at the end (GET /field)
+BUSY_S = 2.0                  # a field.json younger than this means a walk is live somewhere (the remote or the chat): refuse a second
 
 
 def inside(p, poly) -> bool:
@@ -106,6 +108,8 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
     if len(pts) < 2:
         raise ValueError("map.json has fewer than 2 path points; draw the path on the remote and save")
     stops = sorted({int(i) for i in m.get("stops", []) if 0 <= int(i) < len(pts)})
+    if FIELD.exists() and time.time() - FIELD.stat().st_mtime < BUSY_S:   # another process's walk is live: refuse, never interleave
+        raise RuntimeError(f"a walk is already running ({FIELD.name} written {round(time.time() - FIELD.stat().st_mtime, 1)} s ago)")
     for L in lights:
         (ax, ay), (bx, by) = L["pts"][0], L["pts"][-1]     # a dot's midpoint is the dot itself
         L["room"] = room_of(((ax + bx) / 2, (ay + by) / 2), rooms)
@@ -177,9 +181,9 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                     inflight.pop(lid)
                 if abs(level - last[lid]) >= min_step or (level == 0) != (last[lid] == 0):
                     last[lid] = level
-                    writes += 1
                     log("field", f"{_label(L)[:18]} -> {level}%", room=here or "-", x=int(p[0]), y=int(p[1]))
                     if not dry:
+                        writes += 1
                         inflight[lid] = pool.submit(_write, L, level)
             live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None}
             if pending_stops and s >= cum[pending_stops[0]]:
@@ -201,8 +205,8 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
         for lid, fut in list(inflight.items()):
             settle(fut, lid)
         for L in lights:                                 # ends dark, and wait for it
-            writes += 1
             if not dry:
+                writes += 1
                 inflight[L["id"]] = pool.submit(_write, L, 0)
         for lid, fut in inflight.items():
             settle(fut, lid)

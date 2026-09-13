@@ -154,7 +154,7 @@ function App() {
   const relabel = L => { const label = prompt(`label for ${L.name}`, L.label || L.name); if (label != null) setMap(m => ({ ...m, lights: m.lights.map(x => x.id === L.id ? { ...x, label } : x) })); };
   const startPlace = (light, kind) => { setPlacing(light); setMode(kind); setPending(null); };
 
-  const cmd = (label, name, args, opts = {}) => html`<span><button class=${opts.key ? "key" : ""} title=${opts.title || ""} disabled=${busy !== null} onClick=${() => run(name, args)}>${busy === name ? "…" : label}</button></span>`;
+  const cmd = (label, name, args, opts = {}) => html`<span><button class=${opts.key ? "key" : ""} title=${opts.title || ""} disabled=${busy !== null || dot !== null} onClick=${() => run(name, args)}>${busy === name ? "…" : label}</button></span>`;   // a live walk (dot) owns the lights
   const cli = (name, args) => `python -m wtdd ${name}${Object.entries(args).map(([k, v]) => ` ${k}=${v}`).join("")}`;
   const palette = status ? [...status.hue.filter(l => l.room === "Living room").map(l => ({ id: l.id, name: l.name, label: l.name, device: "hue" })), { id: "strip", name: "strip", label: "LED strip", device: "strip" }] : (map?.lights || []);
   const ent = map?.entity || {};
@@ -166,7 +166,7 @@ function App() {
         <div class="panel">
           <h2>the castle · first floor</h2>
           <div class="row">
-            <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2}>▶ walk the path</button>
+            <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2 || dot !== null}>${dot ? "walking…" : "▶ walk the path"}</button>
             <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
             <button class="key" onClick=${saveMap}>save</button>
