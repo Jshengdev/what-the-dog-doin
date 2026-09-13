@@ -18,6 +18,7 @@ from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="wtdd-hue-"))
 os.environ["WTDD_LEDGER"] = str(TMP / "ledger.jsonl")  # before importing the ledger: never the real file
+os.environ["HUE_REMOTE_TOKEN"] = ""   # the stub is a local bridge; never route these checks through the cloud
 
 from .. import ledger  # noqa: E402
 from . import __main__ as cli  # noqa: E402
@@ -250,18 +251,11 @@ def main() -> int:
     check("signal row ok with read-back", last_rows(1)[0]["tool"] == "lights.signal" and last_rows(1)[0]["ok"] and last_rows(1)[0]["state_after"]["signal"] == "alternating")
     # stub now accepts only the openhue shape -> candidate 1 fails (row), candidate 2 lands (row)
     STATE["lights"][L_COLOR]["signaling"].pop("status")
-    STATE["accept_signal"] = "color_xy"
-    STATE["puts"].clear()
-    b.signal(L_COLOR, 5)
-    rows = last_rows(2)
-    check("signal falls through to color [{xy}] with one row per attempt", [p[1]["signaling"].keys() >= {"color"} for p in STATE["puts"]] == [False, True]
-          and [r["ok"] for r in rows] == [False, True] and all(r["tool"] == "lights.signal" for r in rows), str(STATE["puts"]))
-    # nothing accepted -> three rows, raised
-    STATE["lights"][L_COLOR]["signaling"].pop("status")
     STATE["accept_signal"] = "none"
     STATE["puts"].clear()
-    expect_error(lambda: b.signal(L_COLOR, 5), "every schema candidate failed")
-    check("signal: all three candidates tried and recorded", len(STATE["puts"]) == 3 and [r["ok"] for r in last_rows(3)] == [False, False, False])
+    expect_error(lambda: b.signal(L_COLOR, 5), "signaling not accepted")
+    check("signal rejected by the bridge: one PUT, one failed row, raised (no shape guessing)",
+          len(STATE["puts"]) == 1 and last_rows(1)[0]["tool"] == "lights.signal" and last_rows(1)[0]["ok"] is False)
     STATE["accept_signal"] = "colors_xy"
     STATE["puts"].clear()
     expect_error(lambda: b.signal(L_WHITE, 5), "does not support signal alternating")
@@ -269,7 +263,7 @@ def main() -> int:
     STATE["rate_limit"] = True
     expect_error(lambda: b.signal(L_COLOR, 5), "rate limited (HTTP 429)")
     STATE["rate_limit"] = False
-    check("signal under 429: raised on the first candidate, no fall-through", len(STATE["puts"]) == 0
+    check("signal under 429: raised, no retry", len(STATE["puts"]) == 0
           and last_rows(1)[0]["tool"] == "lights.signal" and last_rows(1)[0]["ok"] is False)
 
     # 8. zone: empty zone refuses; unknown id refuses; filled zone sets each light with per-light rows
@@ -287,9 +281,11 @@ def main() -> int:
           [p[0] for p in STATE["puts"]] == [L_COLOR, L_WHITE] and [r["tool"] for r in rows] == ["lights.set", "lights.set", "lights.set_zone"]
           and rows[2]["ok"] and rows[2]["state_after"] == after and after[L_WHITE]["brightness"] == 30.0, json.dumps(rows[2]))
 
-    # 9. the real zones.json placeholder parses and is empty on purpose
+    # 9. the real zones.json parses: corridor zones a/b/c (filled on the day) plus the living room (4 ids, filled 2026-09-13)
     z = cli.load_zones()
-    check("shipped zones.json: three zones, empty light lists", set(z) == {"a", "b", "c"} and all(v["lights"] == [] and len(v["x_range"]) == 2 for v in z.values()))
+    check("shipped zones.json: a/b/c corridor zones plus a 4-light living room",
+          {"a", "b", "c", "living room"} <= set(z) and len(z["living room"]["lights"]) == 4
+          and all(len(z[k]["x_range"]) == 2 for k in ("a", "b", "c")))
 
     # 10. the argparse entry point end to end, pointed at the stub through the same env vars config.py reads
     os.environ["HUE_BRIDGE_IP"], os.environ["HUE_APP_KEY"] = host, KEY

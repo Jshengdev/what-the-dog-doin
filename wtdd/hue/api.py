@@ -201,33 +201,15 @@ class HueBridge:
         return self._put_light(rid, "lights.set", body)
 
     def signal(self, rid: str, seconds: float, colors: list[tuple[float, float]] = (RED_XY, BLUE_XY)) -> dict[str, Any]:
-        """Native `alternating` signal. The array field name differs between sources: aiohue (Home Assistant) sends
-        `colors: [{xy}]`, the openhue OpenAPI mirror says `color: [{xy}]`, and the task brief wrote `colors: [{color: {xy}}]`.
-        Each shape is one PUT and one ledger row, tried in that order, stopping at the first the bridge accepts AND
-        whose read-back shows signaling.status.signal == alternating.
-        wtdd: which shape the real bridge accepts is UNVERIFIED (bridge unreachable while this was written);
-        once known, delete the other candidates."""
+        """Native `alternating` signal between two xy colors for `seconds`. Field shape verified on the real bridge
+        2026-09-13 (Hue Bridge Car, sw 1978293000): `signaling: {signal, duration, colors: [{xy}]}`; read-back shows
+        `signaling.status.signal == "alternating"`. One PUT, one ledger row."""
         supported = self.read(rid).get("signaling", {}).get("signal_values", [])
         if "alternating" not in supported:
             raise HueError(f"light {rid[:8]} does not support signal alternating (signal_values={supported})")
         duration = int(round(seconds)) * 1000
         pts = [{"xy": {"x": x, "y": y}} for x, y in colors]
-        candidates = [
-            {"signal": "alternating", "duration": duration, "colors": pts},
-            {"signal": "alternating", "duration": duration, "color": pts},
-            {"signal": "alternating", "duration": duration, "colors": [{"color": p} for p in pts]},
-        ]
-        last: Exception | None = None
-        for sig in candidates:
-            try:
-                return self._put_light(rid, "lights.signal", {"signaling": sig})
-            except HueError as e:
-                # only a schema rejection moves to the next shape; bad key, 429, unreachable are raised as-is
-                if e.status not in (200, 400) and "read-back mismatch" not in str(e):
-                    raise
-                last = e
-                ledger.log(AGENT, "signal shape rejected, trying next", keys=",".join(sig), err=str(e)[:80])
-        raise HueError(f"signal: every schema candidate failed; last: {last}")
+        return self._put_light(rid, "lights.signal", {"signaling": {"signal": "alternating", "duration": duration, "colors": pts}})
 
     def _put_light(self, rid: str, tool: str, body: dict[str, Any]) -> dict[str, Any]:
         before = summary(self._get_light(rid))
