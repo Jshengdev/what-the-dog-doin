@@ -4,3 +4,4 @@ anthropic
 opencv-python
 pillow
 tinytuya
+mcp

@@ -22,13 +22,20 @@ ZONE = "living room"   # the only zone the chat may touch (docs/SCOPE-LOCK: neve
 
 
 def lights(on: bool, bri: float | None = None) -> str:
-    """Sets every light in the living room zone (wtdd/hue/zones.json), never any other light, with read-back per light."""
+    """The living room, both protocols: the four Hue lights in the zone (cloud CLIP v2) and the Tuya LED strip
+    (local protocol 3.5). Never any other light. Each device is read back; a failure on either is reported, not hidden."""
     from .hue.__main__ import set_zone
+    from .tuya.__main__ import strip
     b = _bridge()
     names = {l["id"]: l["metadata"]["name"] for l in b.lights()}
-    out = set_zone(b, ZONE, on, bri)
-    done = ", ".join(names.get(i, i[:8]) for i in out)
-    return f"{ZONE} lights {'on' if on else 'off'}: {done} (read back)"
+    hue = set_zone(b, ZONE, on, bri)
+    done = [names.get(i, i[:8]) for i in hue]
+    st = strip(on=on, bri=(bri if on else None))
+    done.append(f"strip {'on' if st.get('on') else 'off'}" + (f" {st.get('brightness_pct')}%" if st.get("on") else ""))
+    verb = "on" if on else "off"
+    if bri is not None and on:
+        verb += f" at {int(bri)}%"
+    return f"{ZONE} lights {verb}: {', '.join(done)} (read back)"
 
 
 async def _with_dog(fn: Callable) -> Any:
@@ -79,6 +86,8 @@ def status() -> str:
 HANDLERS: dict[str, Callable[[], Any]] = {
     "lights on": lambda: lights(True),
     "lights off": lambda: lights(False),
+    "dim": lambda: lights(True, 20),
+    "bright": lambda: lights(True, 100),
     "sit": lambda: dog_cmd("Sit"),
     "stand": lambda: dog_cmd("RiseSit"),
     "hello": lambda: dog_cmd("Hello"),

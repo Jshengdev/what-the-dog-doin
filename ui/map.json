@@ -1,0 +1,11 @@
+{
+  "note": "Shared map space = house.svg viewBox (0 0 1060 1540). path = the dot's route in order; zones = polygons with the Hue zone name from wtdd/hue/zones.json and whether the strip belongs to it. Edit here or on the page (Edit path, Save).",
+  "path": [[290, 1240], [380, 1240], [470, 1240], [560, 1240], [650, 1240]],
+  "speed_px_s": 60,
+  "behind_lag_s": 1.5,
+  "zones": [
+    {"name": "a", "label": "zone a", "poly": [[255, 1040], [400, 1040], [400, 1470], [300, 1470], [255, 1400]], "strip": false},
+    {"name": "b", "label": "zone b", "poly": [[400, 1040], [560, 1040], [560, 1470], [400, 1470]], "strip": false},
+    {"name": "c", "label": "zone c", "poly": [[560, 1040], [700, 1040], [700, 1440], [560, 1440]], "strip": true}
+  ]
+}

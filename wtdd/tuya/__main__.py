@@ -35,7 +35,7 @@ def device() -> tinytuya.BulbDevice:
     d = tinytuya.BulbDevice(config.get("TUYA_DEVICE_ID"), config.get("TUYA_DEVICE_IP"), config.get("TUYA_LOCAL_KEY"),
                             version=float(config.maybe("TUYA_VERSION") or 3.5))
     d.set_socketPersistent(True)
-    d.set_socketTimeout(5)
+    d.set_socketTimeout(3)
     return d
 
 
@@ -58,6 +58,18 @@ def write(tool: str, args: dict[str, Any], fn) -> dict[str, Any]:
         r["state_after"] = after
         r["response_or_error"] = json.dumps(resp, default=str)[:300]
         return after
+
+
+def strip(on: bool | None = None, bri: float | None = None, temp: float | None = None) -> dict[str, Any]:
+    """Programmatic entry used by the chat commands: one ledger row per field written, read-back after."""
+    out = {}
+    if on is not None:
+        out = write("lights.tuya_set", {"on": on}, lambda d: d.turn_on(nowait=True) if on else d.turn_off(nowait=True))
+    if bri is not None:
+        out = write("lights.tuya_set", {"brightness_pct": bri}, lambda d: d.set_brightness_percentage(bri, nowait=True))
+    if temp is not None:
+        out = write("lights.tuya_set", {"temp_pct": temp}, lambda d: d.set_colourtemp_percentage(temp, nowait=True))
+    return out
 
 
 def cmd_probe(a: argparse.Namespace) -> int:
@@ -86,24 +98,24 @@ def cmd_status(a: argparse.Namespace) -> int:
 
 
 def cmd_on(a: argparse.Namespace) -> int:
-    print(json.dumps(write("lights.tuya_set", {"on": True}, lambda d: d.turn_on())))
+    print(json.dumps(write("lights.tuya_set", {"on": True}, lambda d: d.turn_on(nowait=True))))
     return 0
 
 
 def cmd_off(a: argparse.Namespace) -> int:
-    print(json.dumps(write("lights.tuya_set", {"on": False}, lambda d: d.turn_off())))
+    print(json.dumps(write("lights.tuya_set", {"on": False}, lambda d: d.turn_off(nowait=True))))
     return 0
 
 
 def cmd_dim(a: argparse.Namespace) -> int:
     pct = max(0, min(100, a.percent))
-    print(json.dumps(write("lights.tuya_set", {"brightness_pct": pct}, lambda d: d.set_brightness_percentage(pct))))
+    print(json.dumps(write("lights.tuya_set", {"brightness_pct": pct}, lambda d: d.set_brightness_percentage(pct, nowait=True))))
     return 0
 
 
 def cmd_temp(a: argparse.Namespace) -> int:
     pct = max(0, min(100, a.percent))
-    print(json.dumps(write("lights.tuya_set", {"temp_pct": pct}, lambda d: d.set_colourtemp_percentage(pct))))
+    print(json.dumps(write("lights.tuya_set", {"temp_pct": pct}, lambda d: d.set_colourtemp_percentage(pct, nowait=True))))
     return 0
 
 
@@ -112,17 +124,21 @@ def cmd_fade(a: argparse.Namespace) -> int:
     d = device()
     before = read(d)
     with step(AGENT, "lights.tuya_fade", APP, {"start": a.start, "end": a.end, "seconds": a.seconds, "steps": a.steps}, before) as r:
-        d.turn_on()
+        d.turn_on(nowait=True)
         for i in range(a.steps + 1):
             pct = a.start + (a.end - a.start) * i / a.steps
-            resp = d.set_brightness_percentage(pct)
+            resp = d.set_brightness_percentage(pct, nowait=True)   # the WT1 does not ack writes; read-back proves them
             if isinstance(resp, dict) and resp.get("Error"):
                 raise RuntimeError(f"tuya fade step {i} failed: {resp}")
             log(AGENT, f"fade step {i}/{a.steps}", pct=round(pct, 1))
             time.sleep(a.seconds / a.steps)
-        time.sleep(0.3)
-        r["state_after"] = read(d)
-        print(json.dumps(r["state_after"]))
+        time.sleep(0.5)
+        after = read(d)
+        if after.get("brightness_pct") is None:   # the WT1 sometimes answers a partial dps right after a burst
+            time.sleep(0.5)
+            after = read(d)
+        r["state_after"] = after
+        print(json.dumps(after))
     return 0
 
 

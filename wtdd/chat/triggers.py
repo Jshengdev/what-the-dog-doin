@@ -11,7 +11,7 @@ import re
 from .. import config
 
 DEFAULT_WAKE = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd,yo dog,hey dog"
-DEFAULT_COMMANDS = "do a round,lights on,lights off,sit,stand,hello,look,status,stop"
+DEFAULT_COMMANDS = "do a round,lights on,lights off,dim,bright,sit,stand,hello,look,status,stop"
 WAKE_FLOOR = 0.80
 COMMAND_FLOOR = 0.75
 

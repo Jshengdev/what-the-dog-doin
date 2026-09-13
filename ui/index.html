@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>what the dog doin · remote</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* physics from tokens.css (the canon); only layout and the few page-specific rules live here */
+  body { margin: 0; background: var(--page, #f6f3ec); color: var(--ink, #262323); font-family: Onest, ui-sans-serif, system-ui, sans-serif; font-weight: 430; font-size: 13px; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 20px 64px; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .04em; opacity: .7; }
+  .grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+  .panel { background: var(--raised, #fbfaf7); border-radius: 18px; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(38,35,35,.06), 0 6px 18px -12px rgba(38,35,35,.25); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  button { font: inherit; font-size: 12px; padding: 6px 12px; border: 0; border-radius: 999px; background: #fff; color: var(--ink, #262323); box-shadow: 0 0 0 1px rgba(38,35,35,.12); cursor: pointer; }
+  button:hover { box-shadow: 0 0 0 1px rgba(38,35,35,.25), 0 6px 14px -10px rgba(38,35,35,.4); }
+  button.key { background: var(--ink, #262323); color: #fff; }
+  button[disabled] { opacity: .45; cursor: default; }
+  input { font: inherit; font-size: 12px; width: 64px; padding: 5px 8px; border: 0; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgba(38,35,35,.15); }
+  .ledger { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.55; max-height: 320px; overflow: auto; }
+  .ledger div { display: grid; grid-template-columns: 62px 1fr 56px; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(38,35,35,.06); }
+  .ok { color: #2f7d4f; } .bad { color: #b2382e; }
+  .live { color: var(--live, #0b0dc4); }
+  svg.map { width: 100%; height: auto; display: block; border-radius: 12px; background: #fbfaf7; }
+  .zone { fill: rgba(38,35,35,.03); stroke: rgba(38,35,35,.35); stroke-width: 2; stroke-dasharray: 8 6; }
+  .zone.lit { fill: rgba(255,196,64,.35); stroke: rgba(38,35,35,.6); }
+  .zone.working { fill: rgba(11,13,196,.10); }
+  .path { fill: none; stroke: rgba(38,35,35,.55); stroke-width: 3; stroke-dasharray: 6 8; }
+  .pt { fill: #fff; stroke: rgba(38,35,35,.6); stroke-width: 2; }
+  .dot { fill: var(--live, #0b0dc4); }
+  .dot-halo { fill: var(--live, #0b0dc4); opacity: .18; }
+  .status { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; line-height: 1.6; }
+  .status b { font-weight: 600; }
+  h1 { font-size: 20px; font-weight: 480; margin: 0; }
+  h2 { font-size: 11px; font-weight: 480; letter-spacing: .08em; text-transform: uppercase; opacity: .6; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import React, { useEffect, useRef, useState } from "https://esm.sh/react@18";
+import { createRoot } from "https://esm.sh/react-dom@18/client";
+import htm from "https://esm.sh/htm@3";
+const html = htm.bind(React.createElement);
+const API = "";  // same origin: python -m wtdd.api
+
+async function callTool(name, args = {}) {
+  const r = await fetch(`${API}/tools/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args) });
+  return r.json();
+}
+const inside = (p, poly) => {  // ray cast
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+};
+const centroid = poly => poly.reduce((a, p) => [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length], [0, 0]);
+
+function App() {
+  const [tools, setTools] = useState([]);
+  const [map, setMap] = useState(null);
+  const [ledger, setLedger] = useState([]);
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [last, setLast] = useState(null);
+  const [edit, setEdit] = useState(false);
+  const [dot, setDot] = useState(null);         // [x, y] while playing
+  const [lit, setLit] = useState({});           // zone name -> true when we lit it
+  const [working, setWorking] = useState({});
+  const [pct, setPct] = useState(20);
+  const playing = useRef(false);
+  const svgRef = useRef(null);
+
+  useEffect(() => { fetch(`${API}/tools`).then(r => r.json()).then(setTools); fetch(`${API}/map`).then(r => r.json()).then(setMap); }, []);
+  useEffect(() => { const t = setInterval(() => fetch(`${API}/ledger?n=25`).then(r => r.json()).then(setLedger), 2000); return () => clearInterval(t); }, []);
+
+  const run = async (name, args) => {
+    setBusy(name);
+    const out = await callTool(name, args);
+    setLast(out); setBusy(null);
+    if (name === "lights_status" && out.ok) setStatus(out.result);
+    return out;
+  };
+
+  // the follow-the-body rule: entering a zone lights it (and its strip); the zone behind goes dark after the lag
+  const setZone = async (z, on) => {
+    setWorking(w => ({ ...w, [z.name]: true }));
+    const out = await callTool("zone_set", { zone: z.name, on });
+    if (z.strip) await callTool("strip_set", { on });
+    setWorking(w => ({ ...w, [z.name]: false }));
+    setLit(l => ({ ...l, [z.name]: on && out.ok }));
+  };
+
+  const play = async () => {
+    if (!map || playing.current) return;
+    playing.current = true;
+    const pts = map.path, speed = map.speed_px_s || 60, lag = (map.behind_lag_s || 1.5) * 1000;
+    let cur = null, t0 = performance.now();
+    const segs = []; let total = 0;
+    for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); segs.push([pts[i-1], pts[i], d]); total += d; }
+    const at = s => { let acc = 0; for (const [a, b, d] of segs) { if (s <= acc + d) { const k = (s - acc) / d; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; } acc += d; } return pts[pts.length - 1]; };
+    await new Promise(res => {
+      const step = () => {
+        const s = Math.min(total, (performance.now() - t0) / 1000 * speed);
+        const p = at(s); setDot(p);
+        const z = map.zones.find(z => inside(p, z.poly)) || null;
+        if (z && z.name !== cur) {
+          const prev = map.zones.find(x => x.name === cur);
+          cur = z.name;
+          setZone(z, true);
+          if (prev) setTimeout(() => setZone(prev, false), lag);
+        }
+        if (s < total && playing.current) requestAnimationFrame(step); else res();
+      };
+      requestAnimationFrame(step);
+    });
+    const lastZ = map.zones.find(z => z.name === cur);
+    if (lastZ) setTimeout(() => setZone(lastZ, false), lag);
+    playing.current = false; setTimeout(() => setDot(null), lag);
+  };
+  const stop = () => { playing.current = false; };
+
+  const onMapClick = e => {
+    if (!edit || !map) return;
+    const svg = svgRef.current, pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    setMap({ ...map, path: [...map.path, [Math.round(p.x), Math.round(p.y)]] });
+  };
+  const saveMap = async () => { await fetch(`${API}/map`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(map) }); setEdit(false); };
+
+  const btn = (label, name, args, key) => html`<button class=${key ? "key" : ""} disabled=${busy !== null} onClick=${() => run(name, args)}>${busy === name ? "…" : label}</button>`;
+
+  return html`<div class="wrap">
+    <div class="top"><h1>what the dog doin <span class="mono">· remote</span></h1>
+      <span class="mono">${tools.length} tools · <span class="live">live</span> · python -m wtdd.api</span></div>
+    <div class="grid">
+      <div class="panel">
+        <h2>the castle · first floor</h2>
+        <div class="row">
+          <button class="key" onClick=${play} disabled=${!map}>▶ run the corridor</button>
+          <button onClick=${stop}>stop</button>
+          <button onClick=${() => setEdit(!edit)}>${edit ? "editing path (click to add points)" : "edit path"}</button>
+          ${edit && html`<button onClick=${() => setMap({ ...map, path: [] })}>clear</button><button class="key" onClick=${saveMap}>save</button>`}
+          <span class="mono">${map ? `${map.path.length} pts · ${map.speed_px_s} px/s · behind lag ${map.behind_lag_s}s` : "loading map"}</span>
+        </div>
+        ${map && html`<svg ref=${svgRef} class="map" viewBox="0 0 1060 1540" onClick=${onMapClick}>
+          <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
+          ${map.zones.map(z => html`<polygon key=${z.name} class=${"zone" + (lit[z.name] ? " lit" : "") + (working[z.name] ? " working" : "")} points=${z.poly.map(p => p.join(",")).join(" ")}/>`)}
+          ${map.zones.map(z => { const c = centroid(z.poly); return html`<text key=${"l" + z.name} x=${c[0]} y=${c[1] + 90} text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="18" fill="#262323" fill-opacity=".6">${z.label}${z.strip ? " + strip" : ""}</text>`; })}
+          <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
+          ${map.path.map((p, i) => html`<circle key=${i} class="pt" cx=${p[0]} cy=${p[1]} r="6"/>`)}
+          ${dot && html`<circle class="dot-halo" cx=${dot[0]} cy=${dot[1]} r="26"/><circle class="dot" cx=${dot[0]} cy=${dot[1]} r="11"/>`}
+        </svg>`}
+      </div>
+      <div>
+        <div class="panel" style="margin-bottom:16px">
+          <h2>living room · both protocols</h2>
+          <div class="row">${btn("lights on", "lights_on", {}, true)}${btn("lights off", "lights_off", {})}${btn("dim 20", "lights_dim", { percent: 20 })}${btn("bright", "lights_dim", { percent: 100 })}</div>
+          <div class="row"><input type="number" value=${pct} onInput=${e => setPct(+e.target.value)} min="0" max="100"/>${btn("set %", "lights_dim", { percent: pct })}${btn("strip warm", "strip_temp", { percent: 0 })}${btn("strip cool", "strip_temp", { percent: 100 })}${btn("fade strip", "strip_fade", {})}</div>
+          <div class="row">${btn("red/blue 5s", "hue_signal", { light: "special", seconds: 5 })}${btn("zone a", "zone_set", { zone: "a", on: true })}${btn("zone b", "zone_set", { zone: "b", on: true })}${btn("zone c", "zone_set", { zone: "c", on: true })}${btn("read all", "lights_status", {})}</div>
+          ${last && html`<div class="mono" style="margin-top:8px">${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || JSON.stringify(last.result).slice(0, 160))) : last.error}</div>`}
+        </div>
+        ${status && html`<div class="panel" style="margin-bottom:16px"><h2>state · read back</h2><div class="status">
+          ${status.hue.map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.room} · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}
+          <div><b>strip</b> · ${status.strip.error ? status.strip.error : `${status.strip.on ? "on" : "off"} · ${status.strip.brightness_pct}% · temp ${status.strip.temp_pct}%`}</div>
+        </div></div>`}
+        <div class="panel"><h2>receipts · ledger.jsonl</h2><div class="ledger">
+          ${[...ledger].reverse().map((r, i) => html`<div key=${i}><span>${(r.ts || "").slice(11)}</span><span class=${r.ok ? "" : "bad"}>${r.tool}${r.ok ? "" : " FAILED"} ${r.args ? JSON.stringify(r.args).slice(0, 60) : ""}</span><span>${r.latency_ms} ms</span></div>`)}
+        </div></div>
+      </div>
+    </div>
+  </div>`;
+}
+createRoot(document.getElementById("root")).render(html`<${App}/>`);
+</script>
+</body>
+</html>
