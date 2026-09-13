@@ -176,10 +176,11 @@ class DogSession:
         log("dog", "route recorded", samples=len(pts), waypoints=len(path), stops=stops, length_px=length)
         return {"active": False, "path": path, "stops": stops, "actions": actions, "length_px": length, "samples": len(pts)}
 
-    def mark(self, look: str = "tilt", say: bool = True) -> dict[str, Any]:
+    def mark(self, look: str = "tilt", say: bool = True, ask: bool = False) -> dict[str, Any]:
         """A stop at the dog's current believed position (while recording), with the action to replay there: the look
-        kind (tilt | level | sit) and whether to post the sentence. The remote marks one whenever a look button is
-        pressed during a recording, so the recording holds what the dog did, not only where it went."""
+        kind (tilt | level | sit), whether to post the sentence, and ask = the intruder check (if someone is in frame
+        the round asks the group "who dis?!" and holds for the verdict; only stops marked ask do). The remote marks one
+        whenever a look button is pressed during a recording, so the recording holds what the dog did, not only where."""
         if not self.rec:
             raise RuntimeError("not recording")
         pose = self.map_pose()
@@ -187,8 +188,8 @@ class DogSession:
             raise RuntimeError("no pose: the dog is not connected or not calibrated")
         if look not in LOOKS:
             raise ValueError(f"look must be one of {LOOKS}, got {look!r}")
-        self.rec["marks"].append({"p": pose["p"], "action": {"look": look, "say": bool(say)}})
-        log("dog", "stop marked", p=pose["p"], look=look, say=say, n=len(self.rec["marks"]))
+        self.rec["marks"].append({"p": pose["p"], "action": {"look": look, "say": bool(say), "ask": bool(ask)}})
+        log("dog", "stop marked", p=pose["p"], look=look, say=say, ask=ask, n=len(self.rec["marks"]))
         return {"marks": self.rec["marks"]}
 
     async def _record(self) -> None:

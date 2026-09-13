@@ -139,7 +139,7 @@ function App() {
     const t = setInterval(() => fetch(`${API}/dog/state`).then(r => r.json()).then(d => { setDog(d); if (!drag.current) setDogDrag(null); }).catch(() => {}), 1000);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); clearInterval(t); };
   }, []);
-  const markIf = (look, say) => { if (dog?.rec) post("/dog/mark", { look, say }).then(r => r.json()).then(setLast); };   // recording: the look pressed here becomes this stop's action, with a report
+  const markIf = (look, say, ask = false) => { if (dog?.rec) post("/dog/mark", { look, say, ask }).then(r => r.json()).then(setLast); };   // recording: the look pressed here becomes this stop's action, with a report
   const lookShot = async kind => { markIf(kind, true); const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
   const key = (k, label) => html`<button class="small" onPointerDown=${() => press(k)} onPointerUp=${() => release(k)} onPointerLeave=${() => release(k)}>${label}</button>`;
 
@@ -231,7 +231,7 @@ function App() {
             <button class=${"small" + (dog?.rec ? " on" : "")} disabled=${!dog?.calibrated} onClick=${() => post("/dog/record", { on: !dog?.rec }).then(r => r.json()).then(o => { setLast(o); if (o.ok && o.rec && !o.rec.active) fetch("/map").then(r => r.json()).then(setMap); })}>${dog?.rec ? `stop & save route (${dog.rec.n} pts)` : "record route"}</button>
             ${dog?.rec && html`<button class="small" title="a stop with the default action: nod, photo, sentence to the castle" onClick=${() => post("/dog/mark", { look: "tilt", say: true }).then(r => r.json()).then(setLast)}>mark stop here (${dog.rec.marks.length})</button>`}
             <button class="small key" disabled=${busy !== null} title=${dog?.rec ? "recording: marks this spot: nod (floor + room frames) and report" : ""} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button>
-            ${dog?.rec && html`<button class="small" title="recording: marks this spot: level look (a table, cups) and report" onClick=${() => lookShot("level")}>level photo</button><button class="small" title="recording: marks this spot: sit look, 48 degrees up (a face) and report" onClick=${() => lookShot("sit")}>sit photo (look up)</button>`}
+            ${dog?.rec && html`<button class="small" title="recording: marks this spot: level look (a table, cups) and report" onClick=${() => lookShot("level")}>level photo</button><button class="small" title="recording: marks this spot: sit look, 48 degrees up (a face) and report" onClick=${() => lookShot("sit")}>sit photo (look up)</button><button class="small key" title="recording: marks this spot as the intruder check: look up, report, and if someone is in frame ask the group 'who dis?!' and hold for the verdict" onClick=${async () => { markIf("sit", true, true); await run("dog_look", { look: "sit" }); }}>intruder check here</button>`}
             <span><button class="small key" disabled=${busy !== null} onClick=${() => { markIf("tilt", true); run("dog_say", {}); }}>${busy === "dog_say" ? "…" : "nod + say to castle"}</button></span>
             <button class=${"small" + (watch?.intruder ? " on" : "")} title="while on, a person the detector sees for a few frames triggers the photo, STRANGER DANGER to the castle and red/blue on the room" onClick=${() => post("/intruder", { on: !watch?.intruder }).then(r => r.json()).then(setLast)}>${watch?.intruder ? "intruder watch ON" : "intruder watch off"}</button>
             ${cmd("stranger alarm now", "intruder_alarm", {})}
@@ -245,7 +245,7 @@ function App() {
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
             ${map.path.map((p, i) => { const st = (map.stops || []).includes(i); return html`<g key=${"p" + i}>
               <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${mode === "path" ? (e => e.stopPropagation()) : onDown("path", i, 0)} onClick=${e => { e.stopPropagation(); if (mode === "path") deletePoint(i); }} onDoubleClick=${e => { e.stopPropagation(); if (mode !== "path") toggleStop(i); }}/>
-              ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}${(map.actions || {})[i] ? ` · ${({ tilt: "nod", level: "level", sit: "look up" })[(map.actions || {})[i].look] || (map.actions || {})[i].look}${(map.actions || {})[i].say ? " + report" : " photo"}` : ""}</text>`}</g>`; })}
+              ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}${(map.actions || {})[i] ? ` · ${({ tilt: "nod", level: "level", sit: "look up" })[(map.actions || {})[i].look] || (map.actions || {})[i].look}${(map.actions || {})[i].say ? " + report" : " photo"}${(map.actions || {})[i].ask ? " + who dis" : ""}` : ""}</text>`}</g>`; })}
             ${(map.lights || []).map((L, li) => {
               const lv = levels[L.id] || 0;
               if (L.kind === "line") return html`<g key=${L.id}>
@@ -261,7 +261,7 @@ function App() {
                 <text class="lbl" x=${x} y=${y - 22} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
-            ${dog?.rec && html`<g><polyline class="trace" points=${dog.rec.points.map(p => p.join(",")).join(" ")}/>${dog.rec.marks.map((m, i) => html`<g key=${"m" + i}><circle class="mark" cx=${m[0]} cy=${m[1]} r="10"/><text class="lbl" x=${m[0] + 14} y=${m[1] + 6}>${(dog.rec.actions || [])[i] ? `${dog.rec.actions[i].look}${dog.rec.actions[i].say ? " + say" : " photo"}` : "stop"}</text></g>`)}</g>`}
+            ${dog?.rec && html`<g><polyline class="trace" points=${dog.rec.points.map(p => p.join(",")).join(" ")}/>${dog.rec.marks.map((m, i) => html`<g key=${"m" + i}><circle class="mark" cx=${m[0]} cy=${m[1]} r="10"/><text class="lbl" x=${m[0] + 14} y=${m[1] + 6}>${(dog.rec.actions || [])[i] ? `${dog.rec.actions[i].look}${dog.rec.actions[i].say ? " + say" : " photo"}${dog.rec.actions[i].ask ? " + who dis" : ""}` : "stop"}</text></g>`)}</g>`}
             ${lidar?.points_px?.length > 0 && html`<path class="lidar" d=${lidar.points_px.map(p => `M${p[0]} ${p[1]}h0`).join("")}/>`}
             ${(dogDrag || dog?.map) && (() => {
               const D = dogDrag || dog.map, [x, y] = D.p, h = D.heading_deg * Math.PI / 180, L = 170, half = 0.5;   // the cone: where it points, about 60 degrees wide

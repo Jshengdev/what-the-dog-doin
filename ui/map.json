@@ -2,96 +2,108 @@
   "note": "Map space = house.svg viewBox (0 0 1060 1540). path = the entity's route (draw on the page). entity = radius_px (how far a light reacts), speed_px_s, falloff (curve steepness; 1 linear, higher = brightness holds near the center then drops), other_room_factor (lights in rooms the entity is not in are scaled by this), samples (points along the strip line). lights = Johnny's placed markers: kind dot (lamp) or line (the strip); pts in map space; room is computed from rooms. zones stay for the chat commands and the light show.",
   "path": [
     [
-      505,
-      526
+      456,
+      399
     ],
     [
-      530,
-      475
+      429,
+      444
     ],
     [
-      487,
-      505
+      408,
+      491
     ],
     [
-      482,
-      550
+      390,
+      537
     ],
     [
-      503,
-      593
+      387,
+      586
     ],
     [
-      530,
-      635
+      386,
+      646
     ],
     [
-      563,
-      676
+      382,
+      698
     ],
     [
-      570,
-      727
+      350,
+      744
     ],
     [
-      567,
-      793
+      315,
+      776
     ],
     [
-      556,
-      850
+      275,
+      800
     ],
     [
-      533,
-      898
+      230,
+      823
     ],
     [
-      507,
-      949
+      196,
+      859
     ],
     [
-      486,
-      1007
+      166,
+      897
     ],
     [
-      467,
-      954
+      127,
+      922
     ],
     [
-      461,
-      904
+      141,
+      878
     ],
     [
-      510,
-      869
+      171,
+      841
     ],
     [
-      549,
-      827
+      210,
+      817
     ],
     [
-      565,
-      782
+      256,
+      801
     ],
     [
-      565,
-      730
+      301,
+      779
     ],
     [
-      533,
-      683
+      353,
+      750
     ],
     [
-      503,
-      637
+      385,
+      714
     ],
     [
-      502,
-      581
+      403,
+      654
     ],
     [
-      497,
+      405,
+      591
+    ],
+    [
+      407,
       536
+    ],
+    [
+      434,
+      497
+    ],
+    [
+      450,
+      478
     ]
   ],
   "zones": [
@@ -435,5 +447,23 @@
     "samples": 12,
     "gain": 2.1
   },
-  "stops": []
+  "stops": [
+    4,
+    13,
+    15
+  ],
+  "actions": {
+    "13": {
+      "look": "tilt",
+      "say": false
+    },
+    "15": {
+      "look": "tilt",
+      "say": false
+    },
+    "4": {
+      "look": "tilt",
+      "say": false
+    }
+  }
 }

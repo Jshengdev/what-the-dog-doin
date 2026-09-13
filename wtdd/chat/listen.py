@@ -106,17 +106,18 @@ class Listener:
         from .. import tools
         from ..tools.dog_say import look_and_see
         k = m["guid"] + (f":{at}" if at is not None else "")
-        look = "tilt"
-        if at is not None:   # the look recorded at this stop (map.json actions), default the tilt nod
+        look, ask = "tilt", _flag("WTDD_ALARM")
+        if at is not None:   # the action recorded at this stop (map.json actions): the look, and whether this is the intruder check
             from ..field import MAP
-            look = ((json.loads(MAP.read_text()).get("actions") or {}).get(str(at)) or {}).get("look", "tilt")
+            action = (json.loads(MAP.read_text()).get("actions") or {}).get(str(at)) or {}
+            look, ask = action.get("look", "tilt"), bool(action.get("ask", False))
         try:
             seen = look_and_see(look, stop=at)
             self.say(f"say:{k}", seen["text"], seen["file"])
         except Exception as e:  # noqa: BLE001
             self.say(f"say:{k}", f"couldn't look: {type(e).__name__}: {str(e)[:100]}")
             return
-        if seen.get("person") and _flag("WTDD_ALARM"):   # someone in frame: ask the group, hold here for its verdict
+        if seen.get("person") and ask:   # the intruder check: someone in frame, ask the group, hold here for its verdict
             self.say(f"alarm:{k}", "who dis?!")
             PENDING.write_text(json.dumps({"kind": "who_dis", "t": time.time(), "file": seen.get("file"), "seconds": 5,
                                            "trigger": f"alarm:{k}", "classes": (seen.get("detector") or {}).get("classes")}))
