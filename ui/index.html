@@ -95,7 +95,7 @@ function App() {
   const run = async (name, args) => { setBusy(name); const out = await call(name, args); setLast(out); setBusy(null); if (name === "lights_status" && out.ok) setStatus(out.result); return out; };
   const toMap = e => { const svg = svgRef.current, pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(p.x), Math.round(p.y)]; };
   const withRooms = m => ({ ...m, lights: (m.lights || []).map(L => ({ ...L, room: roomOf(L.kind === "line" ? [(L.pts[0][0] + L.pts[1][0]) / 2, (L.pts[0][1] + L.pts[1][1]) / 2] : L.pts[0], m.rooms) })) });
-  const saveMap = async () => { const m = withRooms(map); setMap(m); await putMap(m); setMode(null); setPlacing(null); setPending(null); };
+  const saveMap = async () => { const m = withRooms(map); setMap(m); const r = await (await putMap(m)).json(); setLast({ ...r, tool: "save map" }); if (r.ok) { setMode(null); setPlacing(null); setPending(null); } };   // a refused save names the bad points; the edit stays
   const setEnt = (k, v) => setMap({ ...map, entity: { ...map.entity, [k]: v } });
 
   // ---------- the dog: hold-to-drive (W A S D, Q E to turn) and the looks. Velocities refresh every 200 ms while a key
@@ -182,6 +182,8 @@ function App() {
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
             <button class=${mode === "here" ? "on" : ""} onClick=${() => { setMode(mode === "here" ? null : "here"); setPlacing(null); }}>${mode === "here" ? "click where the dog is" : "dog is here…"}</button>
             <button class="key" onClick=${saveMap}>save</button>
+            ${last && last.tool === "save map" && html`<span class=${"mono " + (last.ok ? "ok" : "bad")}>${last.ok ? "saved" : last.error}</span>`}
+            ${last && last.rec && last.rec.problems?.length ? html`<span class="mono bad">recorded with problems: ${last.rec.problems.join("; ")}</span>` : ""}
             <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
           <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click the floor to add a point at the end · click an existing point to DELETE it · leave draw mode to drag points or double-click them into stops" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>

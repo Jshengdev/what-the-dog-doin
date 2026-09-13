@@ -33,7 +33,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import tools
 from .config import ROOT
-from .field import FIELD, MAP
+from .field import FIELD, MAP, check_path
 from pathlib import Path
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
@@ -110,8 +110,12 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/map":
             data = self._body()
+            problems = check_path(data.get("path", []), data.get("rooms", []))
+            if problems and data.get("path"):   # an unrunnable path is refused, with the points named; the page keeps the edit
+                log("api", "map NOT saved", problems=len(problems))
+                return self._json(400, {"ok": False, "error": "not saved: " + "; ".join(problems)})
             MAP.write_text(json.dumps(data, indent=2) + "\n")
-            log("api", "map saved", points=len(data.get("path", [])), zones=len(data.get("zones", [])))
+            log("api", "map saved", points=len(data.get("path", [])), stops=len(data.get("stops", [])))
             return self._json(200, {"ok": True})
         if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid", "/dog/record", "/dog/mark"):
             import math
@@ -129,8 +133,11 @@ class H(BaseHTTPRequestHandler):
                     p = body["p"]
                     h = math.radians(body["heading_deg"]) if "heading_deg" in body else nav.heading_of(p, body["toward"])
                     out = {"map": s.calibrate(p, h)}
-                elif u.path == "/dog/follow":         # the map's path and stops, from the nearest waypoint
+                elif u.path == "/dog/follow":         # the map's path and stops, from the start (or the nearest waypoint)
                     m = json.loads(MAP.read_text())
+                    problems = check_path(m["path"], m.get("rooms", []))
+                    if problems:
+                        raise ValueError("the path cannot be followed: " + "; ".join(problems))
                     out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
                 elif u.path == "/dog/avoid":          # {on: true|false}: the dog's own obstacle avoidance, read back
                     out = {"avoid": s.avoid(bool(body.get("on", True)))}
@@ -138,11 +145,12 @@ class H(BaseHTTPRequestHandler):
                     out = {"rec": s.mark()}
                 elif u.path == "/dog/record":         # {on: true} start; {on: false} stop and write the trace as the map's path + stops
                     rec = s.record(bool(body.get("on", True)))
-                    if not rec["active"]:
+                    if not rec["active"]:             # written even with problems (the drive is not lost); they are returned and shown
                         m = json.loads(MAP.read_text())
                         m["path"], m["stops"] = rec["path"], rec["stops"]
                         MAP.write_text(json.dumps(m, indent=2) + "\n")
-                        log("api", "map saved from the recorded route", points=len(rec["path"]), stops=rec["stops"])
+                        rec["problems"] = check_path(rec["path"], m.get("rooms", []))
+                        log("api", "map saved from the recorded route", points=len(rec["path"]), stops=rec["stops"], problems=len(rec["problems"]))
                     out = {"rec": rec}
                 else:
                     out = {"follow": s.resume()}

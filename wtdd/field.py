@@ -62,6 +62,25 @@ def room_of(p, rooms) -> str | None:
     return next((r["name"] for r in rooms if inside(p, r["poly"])), None)
 
 
+MAX_STEP_PX = 300   # about 2.8 m: consecutive path points further apart are a jump (a stray click, or the trace hopping at a correction)
+
+
+def check_path(path, rooms) -> list[str]:
+    """Why a path cannot be run, one line per problem, [] when it can: fewer than 2 points, a point outside every room,
+    two consecutive points further apart than MAX_STEP_PX. Points are numbered from 1 as on the remote."""
+    bad: list[str] = []
+    if len(path) < 2:
+        bad.append(f"only {len(path)} path point(s); draw at least 2")
+    for i, q in enumerate(path):
+        if room_of(q, rooms) is None:
+            bad.append(f"point {i + 1} at {int(q[0])},{int(q[1])} is outside every room")
+    for i in range(1, len(path)):
+        d = math.dist(path[i - 1], path[i])
+        if d > MAX_STEP_PX:
+            bad.append(f"points {i} and {i + 1} are {int(d)} px apart (over {MAX_STEP_PX}): a jump, delete the stray one")
+    return bad
+
+
 def score(light: dict[str, Any], p, ent: dict[str, Any], here: str | None) -> float:
     R, k = float(ent.get("radius_px", 220)), float(ent.get("falloff", 1.6))
     w = lambda q: max(0.0, 1 - math.dist(p, q) / R) ** k  # noqa: E731
@@ -125,8 +144,9 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
         raise ValueError(f"source must be entity or dog, got {source!r}")
     m = json.loads(MAP.read_text())
     pts, ent, lights, rooms = m["path"], m.get("entity", {}), m.get("lights", []), m.get("rooms", [])
-    if len(pts) < 2:
-        raise ValueError("map.json has fewer than 2 path points; draw the path on the remote and save")
+    problems = check_path(pts, rooms)
+    if problems:
+        raise ValueError("the path cannot be run: " + "; ".join(problems))
     stops = sorted({int(i) for i in m.get("stops", []) if 0 <= int(i) < len(pts)})
     if FIELD.exists() and time.time() - FIELD.stat().st_mtime < BUSY_S:   # another process's walk is live: refuse, never interleave
         raise RuntimeError(f"a walk is already running ({FIELD.name} written {round(time.time() - FIELD.stat().st_mtime, 1)} s ago)")
