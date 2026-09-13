@@ -18,7 +18,7 @@ def _load() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            v = v.split("#", 1)[0].strip().strip('"').strip("'")
+            v = v.split(" #", 1)[0].strip().strip('"').strip("'")   # a comment needs a space before #; keys can contain #
             os.environ.setdefault(k.strip(), v)
     _loaded = True
 
