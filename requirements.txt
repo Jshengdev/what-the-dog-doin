@@ -3,3 +3,4 @@ requests
 anthropic
 opencv-python
 pillow
+tinytuya
