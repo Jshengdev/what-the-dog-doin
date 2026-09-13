@@ -35,10 +35,10 @@
   .ok { color: var(--ok); } .bad { color: var(--bad); } .live { color: var(--live, #0b0dc4); }
   /* status cards: a row of sharp cards, each with a square light (green / amber / red) */
   .status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-in); margin-bottom: var(--gap-group); }
-  .status { background: var(--card-bg); border-radius: var(--r-card); box-shadow: 0 0 0 1px var(--card-edge); padding: 10px 12px; display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; }
-  .status .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--bad); flex: 0 0 auto; }
-  .status.on .sq { background: var(--ok); } .status.warn .sq { background: var(--warn); }
-  .status b { font-weight: 600; font-family: Onest, ui-sans-serif, system-ui, sans-serif; font-size: 12px; margin-right: 2px; }
+  .stat { background: var(--card-bg); border-radius: var(--r-card); box-shadow: 0 0 0 1px var(--card-edge); padding: 10px 12px; display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; }
+  .stat .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--bad); flex: 0 0 auto; }
+  .stat.on .sq { background: var(--ok); } .stat.warn .sq { background: var(--warn); }
+  .stat b { font-weight: 600; font-family: Onest, ui-sans-serif, system-ui, sans-serif; font-size: 12px; margin-right: 2px; }
   svg.map { width: 100%; height: auto; display: block; border-radius: 12px; background: #fbfaf7; touch-action: none; }
   svg.map.placing { cursor: crosshair; }
   .room { fill: none; stroke: none; } .room.here { fill: rgba(11,13,196,.05); }
