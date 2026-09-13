@@ -49,5 +49,5 @@ def generate(agent: str, messages: list[dict[str, Any]], *, model_id: str | None
         out = {"text": text, "model": data.get("model", mid), "usage": data.get("usage", {}), "finish_reason": finish, "raw": data}
         r["state_after"] = {"model": out["model"], "usage": out["usage"], "finish": finish, "chars": len(text),
                             "tool_calls": [t["function"]["name"] for t in (choice["message"].get("tool_calls") or [])]}
-        r["response_or_error"] = text[:200]
+        r["response_or_error"] = text[:600]
         return out

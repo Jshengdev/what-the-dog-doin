@@ -9,8 +9,8 @@ registry, so every action has one code path: the CLI (python -m wtdd <tool> k=v)
 POST /tools/<name>), the MCP server (python -m wtdd.mcp_server), the chat commands (wtdd/commands.py HANDLERS), the
 chat wake demo (dog_on_fire, walk_path) and the model loop (wtdd/agent.py). call() rejects unknown args, fills ARGS
 defaults and coerces a boolean arg given as a string ("1", "true", "on", "yes"), so a JSON body, a CLI key=value and
-a model's function call all behave the same. The 20 tools: chat_post, dog_cmd, dog_look, dog_on_fire, dog_round, dog_say,
-hue_light_set, hue_signal, identify, ledger_tail, light_show, lights_dim, lights_off, lights_on, lights_status,
+a model's function call all behave the same. The 21 tools: chat_post, dog_cmd, dog_look, dog_on_fire, dog_round, dog_say,
+hue_light_set, hue_signal, identify, ledger_tail, light_alarm, light_show, lights_dim, lights_off, lights_on, lights_status,
 strip_fade, strip_set, strip_temp, walk_path, zone_set. Tool names are an HTTP and MCP contract (ui/index.html).
 """
 from __future__ import annotations

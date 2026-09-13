@@ -7,6 +7,8 @@
   POST /tools/<name>  {args}      {ok, tool, args, result}, or 500 {ok: false, tool, args, error}
   GET  /ledger?n=25               the last n ledger rows (the page polls this every 2 s)
   GET  /field                     the running walk's position, room, levels and stop from <repo>/field.json, {} when idle (polled at 10 Hz)
+  GET  /evals                     <repo>/evals.json, every scenario's newest trials (python -m wtdd.evals --write)
+  GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms (python -m wtdd.watch)
   GET  /dog/state                 the shared dog session's state; POST /dog/drive {x,y,z} and /dog/stop for hold-to-drive
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
@@ -68,6 +70,16 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
         if u.path == "/field":
             return self._json(200, json.loads(FIELD.read_text()) if FIELD.exists() else {})
+        if u.path == "/evals":
+            f = ROOT / "evals.json"
+            return self._json(200, json.loads(f.read_text()) if f.exists() else {})
+        if u.path == "/watch":
+            f = ROOT / "watch.json"
+            if not f.exists():
+                return self._json(200, {})
+            d = json.loads(f.read_text())
+            d["age_ms"] = round((time.time() - f.stat().st_mtime) * 1000)
+            return self._json(200, d)
         if u.path == "/dog/state":
             from .dog.session import DogSession
             return self._json(200, DogSession.get().state())

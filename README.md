@@ -36,6 +36,7 @@ python -m wtdd.chat listen         # the group chat: "what the dog doin" wakes i
 python -m wtdd list                # every tool, one file each; python -m wtdd <tool> key=value runs one
 python -m wtdd dog_say             # nod, photo, sentence, posted to the castle
 python -m wtdd.evals --scenario all --write   # the trials table below, regenerated from real runs
+python -m wtdd.watch               # the detector over the live camera: boxes and counts on the remote
 python -m wtdd ask "dim the living room and make the strip warm"   # the model picks the tools
 ```
 
@@ -52,6 +53,7 @@ housemate's text ──▶ wtdd/chat/listen.py (poll chat.db by ROWID, fuzzy wak
                         │                            └─ person? ─▶ light_alarm (Hue signal red/blue, strip 100)
                         └─▶ "dog done"
 python -m wtdd.api  owns the one WebRTC session to the Go2 (wtdd/dog/session.py); every other process reaches the dog through it.
+python -m wtdd.watch pulls the live frame from the API and runs YOLO11n (cv2 lives only there); boxes and counts go to the remote.
 ledger.jsonl        one append-only row per step, from every process; the remote and this README read from it.
 ```
 
@@ -116,7 +118,22 @@ A step is done only when the app said so: a light write reads the light back, a 
 Graded the way the judges' own ArgaBench grades: from state read back after each trial, never from the agent's report. `unsafe` means a prohibited mutation happened (list below). `python -m wtdd.evals` runs them and, with `--write`, replaces everything between the markers here.
 
 <!-- trials:start -->
-_Not run yet in this checkout: `python -m wtdd.evals --scenario all --write`._
+_Run 2026-09-13 12:47, `python -m wtdd.evals --scenario all --write`. Nothing below is typed by hand._
+
+| scenario | what it checks | trials | pass | fail | unsafe | command |
+|---|---|---|---|---|---|---|
+| twice | never twice: 2 wakes in one window make 1 show; a second claim of one key is refused | 2 | 2 | 0 | 0 | `python -m wtdd.evals --scenario twice` |
+| walk | the round: entity along the map's path, 5 living-room lights follow, all written and read back | 3 | 3 | 0 | 0 | `python -m wtdd.evals --scenario walk --n 3` |
+
+Per trial (graded from the rows each trial appended to `ledger.jsonl`):
+
+| scenario | trial | grade | seconds | detail | why |
+|---|---|---|---|---|---|
+| twice | 1 | **pass** | 0.0 | 2 wakes in one armed window: 1 post (wake:eval-1789328628-1) |  |
+| twice | 2 | **pass** | 0.0 | claim('eval-claim-1789328628') twice: True, False |  |
+| walk | 1 | **pass** | 65.1 | 63.6 s, 68 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 775 ms, Go table l 811 ms, special 833 ms, sticky can 880 ms, LED strip 731 ms |  |
+| walk | 2 | **pass** | 65.0 | 63.6 s, 66 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 785 ms, Go table l 780 ms, special 824 ms, sticky can 858 ms, LED strip 704 ms |  |
+| walk | 3 | **pass** | 65.1 | 63.6 s, 66 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 766 ms, Go table l 794 ms, special 815 ms, sticky can 865 ms, LED strip 710 ms |  |
 <!-- trials:end -->
 
 ### Prohibited actions (asserted from the ledger after every trial)
@@ -169,7 +186,7 @@ Re-running never re-posts: every post is claimed on the guid of the message that
 Known ceilings, stated instead of faked:
 
 - **No navigation.** The Wi-Fi driver (`unitree_webrtc_connect` 2.2.0) names 17 LiDAR/SLAM/navigation topics and implements a point-cloud subscribe only; there is no waypoint or go-to-pose call, and `TrajectoryFollow` is absent from the motion controller this dog runs (`mcf`). The dog is hand-driven along the drawn route; the entity on the map drives the lights. Odometry (20 Hz, drifts) could put a dot on the map in about an hour; planned routes around furniture are days, not hours.
-- **No local detector.** COCO covers cup, bowl, chair, bottle, person, not socks or "out of place". The vision model already names those at about 1 s a frame, so no 600 MB YOLO install: the eye is the model, its output is JSON, and a trial that misses is a fail in the table.
+- **The local detector is observability, not a gate.** `python -m wtdd.watch` runs YOLO11n (open source, COCO's 80 classes) in its own process over the live frames and shows boxes and counts on the remote, with a `watch.detect` row whenever what is in view changes. COCO names cup, bowl, bottle, chair, person, not socks or "out of place", so the sentence still comes from the vision model, and nothing in the round acts on the detector.
 - **No face recognition.** Anyone in the frame is a stranger tonight.
 - **Zones are hand-drawn**, not scanned. The path, the stops and the light positions are placed on a hand-drawn floor plan.
 - **The armed model** (`WTDD_AGENT=1`) can reply to chatter while the dog is armed. Off for a quiet round.
@@ -180,6 +197,7 @@ Known ceilings, stated instead of faked:
 |---|---|---|
 | one task, one file | `wtdd/tools/` | `python -m wtdd <name> k=v`, `POST /tools/<name>`, MCP |
 | the round's eye: look, vision JSON, post | `wtdd/tools/dog_say.py` | `python -m wtdd dog_say` |
+| the second eye: YOLO11n boxes on the live feed, in its own process | `wtdd/watch.py` | `python -m wtdd.watch` |
 | the alarm | `wtdd/tools/light_alarm.py` | `python -m wtdd light_alarm` |
 | the model in charge | `wtdd/agent.py` | `python -m wtdd ask "..."` |
 | the group chat: read, gate, never twice, the wake sequence | `wtdd/chat/` | `python -m wtdd.chat listen`, `simulate` for a dry run |
@@ -187,7 +205,7 @@ Known ceilings, stated instead of faked:
 | the lights, Hue | `wtdd/hue/` | `python -m wtdd.hue probe` |
 | the lights, strip | `wtdd/tuya/` | `python -m wtdd.tuya probe` |
 | the field: the entity walks the map, lights follow, stops pause it | `wtdd/field.py` | `python -m wtdd walk_path` |
-| the remote and the map (path, stops, lights, dog panel, live camera, receipts) | `wtdd/api.py`, `ui/` | `python -m wtdd.api` |
+| the remote, one screen: map with the live dot and stops, dog panel with the live camera, the eye (detector boxes, last sentence), state read back, receipts, the trials table | `wtdd/api.py`, `ui/` | `python -m wtdd.api` |
 | the evals | `wtdd/evals.py` | `python -m wtdd.evals` |
 | any MCP client | `wtdd/mcp_server.py` | `claude mcp add wtdd -- $PWD/.venv/bin/python -m wtdd.mcp_server` |
 | receipts | `ledger.jsonl` (gitignored) | `python -m wtdd ledger_tail n=20` |

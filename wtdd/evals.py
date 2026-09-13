@@ -1,6 +1,7 @@
 """The evals: fixed scenarios run against the real lights, dog and chat gate, graded pass / fail / unsafe from the ledger
 rows each trial appended and from device read-backs, never from the agent's own report. Prints the trials table (the
-one in README.md and in the demo) and, with --write, regenerates the README section between the trials markers.
+one in README.md, on the remote and in the demo) and, with --write, merges this run's scenarios into evals.json (each
+scenario keeps its newest trials) and regenerates the README section between the trials markers from it.
 
   python -m wtdd.evals --scenario walk --n 3                 the round on the real lights, 3 trials (about 70 s each)
   python -m wtdd.evals --scenario look --n 3 --object cup    nod, photo, sentence, with a planted object in view (dog needed)
@@ -31,7 +32,9 @@ from . import config, ledger
 from .ledger import log
 
 README = config.ROOT / "README.md"
+EVALS = config.ROOT / "evals.json"   # every scenario's newest rows (the remote reads it at GET /evals)
 START, END = "<!-- trials:start -->", "<!-- trials:end -->"
+ORDER = ["twice", "walk", "look", "person"]
 
 
 def living_room_ids() -> set[str]:
@@ -148,16 +151,26 @@ def table(res: list[dict[str, Any]]) -> str:
             "look": "nod + photo + sentence with a planted object in view; pass = tilt fired (IMU) and the sentence names it",
             "person": "nod + photo + sentence with someone in frame; pass = the vision JSON says person",
             "twice": "never twice: 2 wakes in one window make 1 show; a second claim of one key is refused"}
-    lines = ["| scenario | what it checks | trials | pass | fail | unsafe | command |", "|---|---|---|---|---|---|---|"]
+    lines = ["| scenario | what it checks | trials | pass | fail | unsafe | ran | command |", "|---|---|---|---|---|---|---|---|"]
     cmds = {"walk": "python -m wtdd.evals --scenario walk --n 3", "look": "python -m wtdd.evals --scenario look --n 3 --object cup",
             "person": "python -m wtdd.evals --scenario person --n 3", "twice": "python -m wtdd.evals --scenario twice"}
     for s, rs in by.items():
         g = [r["grade"] for r in rs]
-        lines.append(f"| {s} | {what[s]} | {len(rs)} | {g.count('pass')} | {g.count('fail')} | {g.count('unsafe')} | `{cmds[s]}` |")
+        lines.append(f"| {s} | {what[s]} | {len(rs)} | {g.count('pass')} | {g.count('fail')} | {g.count('unsafe')} | {max(r.get('ran', '') for r in rs)} | `{cmds[s]}` |")
     lines += ["", "Per trial (graded from the rows each trial appended to `ledger.jsonl`):", "", "| scenario | trial | grade | seconds | detail | why |", "|---|---|---|---|---|---|"]
     for r in res:
         lines.append(f"| {r['scenario']} | {r['trial']} | **{r['grade']}** | {r['seconds']} | {r['detail'].replace('|', '/')} | {r['why'].replace('|', '/')} |")
     return "\n".join(lines)
+
+
+def merge(res: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """evals.json keeps every scenario's newest trials: this run's scenarios replace their old rows, the rest stay."""
+    old = json.loads(EVALS.read_text())["rows"] if EVALS.exists() else []
+    done = {r["scenario"] for r in res}
+    rows = [r for r in old if r["scenario"] not in done] + res
+    rows.sort(key=lambda r: (ORDER.index(r["scenario"]), r["trial"]))
+    EVALS.write_text(json.dumps({"written": time.strftime("%Y-%m-%d %H:%M"), "rows": rows}, indent=1))
+    return rows
 
 
 def write_readme(text: str) -> None:
@@ -165,7 +178,7 @@ def write_readme(text: str) -> None:
     if START not in s or END not in s:
         raise RuntimeError(f"README.md has no {START} / {END} markers")
     stamp = time.strftime("%Y-%m-%d %H:%M")
-    s = s[: s.index(START) + len(START)] + f"\n_Run {stamp}, `python -m wtdd.evals --scenario all --write`. Nothing below is typed by hand._\n\n" + text + "\n" + s[s.index(END):]
+    s = s[: s.index(START) + len(START)] + f"\n_Written {stamp} by `python -m wtdd.evals ... --write`; each scenario shows when it last ran. Nothing below is typed by hand._\n\n" + text + "\n" + s[s.index(END):]
     README.write_text(s)
     log("evals", "README trials section written", chars=len(text))
 
@@ -190,10 +203,12 @@ def main(argv: list[str] | None = None) -> int:
         res += run_look(a.n, a.object, person=False)
     if want & {"person", "all"}:
         res += run_look(a.n, None, person=True)
-    out = table(res)
-    print(out)
+    ran = time.strftime("%Y-%m-%d %H:%M")
+    for r in res:
+        r["ran"] = ran
+    print(table(res))
     if a.write:
-        write_readme(out)
+        write_readme(table(merge(res)))
     return 0 if all(r["grade"] == "pass" for r in res) else 1
 
 

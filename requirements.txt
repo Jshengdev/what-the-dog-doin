@@ -5,3 +5,4 @@ opencv-python
 pillow
 tinytuya
 mcp
+ultralytics   # python -m wtdd.watch: YOLO11n detector in its own process (cv2 must never load in the API process)

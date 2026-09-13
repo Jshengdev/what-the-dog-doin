@@ -76,13 +76,17 @@ function App() {
   const [here, setHere] = useState(null);
   const [levels, setLevels] = useState({});
   const [stopAt, setStopAt] = useState(null);
+  const [watch, setWatch] = useState(null);      // GET /watch: the detector (python -m wtdd.watch), fresh when age_ms < 3000
+  const [trials, setTrials] = useState(null);    // GET /evals: the trials table (python -m wtdd.evals --write)
+  useEffect(() => { const t = setInterval(() => fetch("/watch").then(r => r.json()).then(setWatch).catch(() => {}), 500); return () => clearInterval(t); }, []);
+  useEffect(() => { const f = () => fetch("/evals").then(r => r.json()).then(setTrials).catch(() => {}); f(); const t = setInterval(f, 10000); return () => clearInterval(t); }, []);
   const [pct, setPct] = useState(20);
   const playing = useRef(false);
   const drag = useRef(null); const moved = useRef(false);
   const svgRef = useRef(null);
 
   useEffect(() => { fetch("/map").then(r => r.json()).then(setMap); call("lights_status").then(o => o.ok && setStatus(o.result)); }, []);
-  useEffect(() => { const t = setInterval(() => fetch("/ledger?n=25").then(r => r.json()).then(setLedger), 2000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => fetch("/ledger?n=150").then(r => r.json()).then(setLedger), 2000); return () => clearInterval(t); }, []);   // 150: the eye panel looks back past a walk's writes; receipts show the newest 25
 
   const run = async (name, args) => { setBusy(name); const out = await call(name, args); setLast(out); setBusy(null); if (name === "lights_status" && out.ok) setStatus(out.result); return out; };
   const toMap = e => { const svg = svgRef.current, pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(p.x), Math.round(p.y)]; };
@@ -209,6 +213,25 @@ function App() {
           ${photo && html`<div><img src=${photo.url} style=${{ width: "100%", borderRadius: 10, display: "block" }}/><div class="row"><span class="mono">${photo.kind} · pitch ${photo.pitch}°</span>${cmd("send to castle", "chat_post", { text: "dog's eye view", file: photo.file })}</div></div>`}
         </div>
         <div class="panel">
+          <h2>the eye · what it sees</h2>
+          ${(() => {
+            const fresh = watch && watch.age_ms != null && watch.age_ms < 3000;
+            const seen = [...ledger].reverse().find(r => r.tool === "llm.generate" && r.agent === "watch" && r.ok);
+            let said = null; try { said = seen && JSON.parse(seen.response_or_error); } catch (e) { said = null; }
+            const look = [...ledger].reverse().find(r => r.tool === "dog.look" && r.ok);
+            return html`
+              ${fresh ? html`<img src=${`/pictures/watch.jpg?t=${watch.t}`} style=${{ width: "100%", borderRadius: 10, display: "block" }}/>
+                <div class="mono" style=${{ margin: "4px 0 8px" }}>detector · ${watch.model} · ${Object.entries(watch.classes || {}).map(([k, v]) => `${k} ×${v}`).join(" · ") || "nothing in view"} · ${watch.ms} ms</div>`
+                : html`<div class="mono" style=${{ margin: "0 0 8px" }}>detector off · python -m wtdd.watch</div>`}
+              ${seen ? html`<div class="row" style=${{ alignItems: "flex-start" }}>
+                <img src=${`/pictures/look-tilt.jpg?t=${seen.ts}`} style=${{ width: 160, borderRadius: 8 }}/>
+                <div style=${{ flex: 1, minWidth: 180 }}>
+                  <div>${said ? said.say : seen.response_or_error}</div>
+                  <div class="mono" style=${{ marginTop: 4 }}>${seen.ts.slice(11)} · ${seen.args?.model} · ${seen.latency_ms} ms${said ? ` · person ${said.person} · out of place: ${(said.out_of_place || []).join(", ") || "none"}` : ""}${look?.state_after?.pitch_deg != null ? ` · pitch ${look.state_after.pitch_deg}°` : ""}</div>
+                </div></div>` : html`<div class="hint">no look yet · python -m wtdd dog_say</div>`}`;
+          })()}
+        </div>
+        <div class="panel">
           <h2>entity · the dog on the map</h2>
           <div class="hint">closer = brighter. the strip scores along its length, so a graze at its edge is dim and a pass over its middle is bright. lights in other rooms fade by the other-room factor.</div>
           ${map && html`<div class="row"><label class="k">radius <input type="range" min="60" max="500" value=${ent.radius_px} onInput=${e => setEnt("radius_px", +e.target.value)}/> ${ent.radius_px} px</label></div>
@@ -243,8 +266,15 @@ function App() {
           <div><b>strip</b> · ${status.strip.error ? status.strip.error : `${status.strip.on ? "on" : "off"} · ${status.strip.brightness_pct}% · temp ${status.strip.temp_pct}%`}</div>
         </div></div>`}
         <div class="panel"><h2>receipts · ledger.jsonl</h2><div class="ledger">
-          ${[...ledger].reverse().map((r, i) => html`<div key=${i}><span>${(r.ts || "").slice(11)}</span><span class=${r.ok ? "" : "bad"}>${r.tool}${r.ok ? "" : " FAILED"} ${r.args ? JSON.stringify(r.args).slice(0, 60) : ""}</span><span>${r.latency_ms} ms</span></div>`)}
+          ${[...ledger].reverse().slice(0, 25).map((r, i) => html`<div key=${i}><span>${(r.ts || "").slice(11)}</span><span class=${r.ok ? "" : "bad"}>${r.tool}${r.ok ? "" : " FAILED"} ${r.args ? JSON.stringify(r.args).slice(0, 60) : ""}</span><span>${r.latency_ms} ms</span></div>`)}
         </div></div>
+        <div class="panel"><h2>trials · pass / fail / unsafe</h2>
+          <div class="cmd">python -m wtdd.evals --scenario all --write${trials?.written ? ` · written ${trials.written}` : ""}</div>
+          ${trials?.rows?.length ? html`<div class="ledger" style=${{ maxHeight: 300 }}>
+            ${["twice", "walk", "look", "person"].filter(s => trials.rows.some(r => r.scenario === s)).map(s => { const rs = trials.rows.filter(r => r.scenario === s); const g = rs.map(r => r.grade); return html`<div key=${s}><span><b>${s}</b></span><span>${g.filter(x => x === "pass").length} pass · ${g.filter(x => x === "fail").length} fail · <span class=${g.includes("unsafe") ? "bad" : ""}>${g.filter(x => x === "unsafe").length} unsafe</span> · ${rs.length} trials</span><span>${rs[0].ran?.slice(11) || ""}</span></div>`; })}
+            ${trials.rows.map((r, i) => html`<div key=${"t" + i}><span>${r.scenario} ${r.trial}</span><span class=${r.grade === "pass" ? "ok" : "bad"}>${r.grade}${r.why ? ` · ${r.why}` : ""} <span style=${{ opacity: .7 }}>${(r.detail || "").slice(0, 110)}</span></span><span>${r.seconds} s</span></div>`)}
+          </div>` : html`<div class="hint">no trials written yet</div>`}
+        </div>
       </div>
     </div>
   </div>`;

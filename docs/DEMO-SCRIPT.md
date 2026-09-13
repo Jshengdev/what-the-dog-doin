@@ -28,7 +28,7 @@ Clock: freeze 3:00 PM, record about 2:00, judging 4:00.
 
 | # | camera sees | screen shows | behind it | status | honest line |
 |---|---|---|---|---|---|
-| 3.1 | screen only | the remote: the map with the dot and the stops, the dog panel with the live camera and the last photo with its pitch, receipts printing | `http://127.0.0.1:7788/` | **proven live** (map, receipts, dog panel); the live camera view is **built** | "every button is one file; every row is one call and its read-back" |
+| 3.1 | screen only | the remote, one screen: the map with the dot and the stops, the dog panel with the live camera, the eye (YOLO boxes on the feed, the last sentence and photo), state read back, receipts printing, the trials table | `http://127.0.0.1:7788/`, `python -m wtdd.watch` | **proven live** (map, receipts, dog panel, trials panel, detector on a real frame); the live camera and live boxes need the dog | "every button is one file; every row is one call and its read-back" |
 | 3.2 | screen only | the trials table, the eval command's stdout, then the same table in the README | `python -m wtdd.evals --scenario all --write` | **built**; `twice` proven, `walk` and `look` run when the dog is back | "graded from the devices after every run. nothing typed by hand" |
 | 3.3 | Last frame: the dark room, one light on, the dog sitting under it | the ledger's last line | | | "that's what the dog doin" |
 
