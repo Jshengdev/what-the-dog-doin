@@ -221,8 +221,9 @@ def remote_auth(a: argparse.Namespace) -> int:
     cid, secret, appid = config.get("HUE_CLIENT_ID"), config.get("HUE_CLIENT_SECRET"), config.get("HUE_APP_ID")
     url = (f"{OAUTH}/authorize?" + urllib.parse.urlencode({"client_id": cid, "response_type": "code", "state": "wtdd",
            "appid": appid, "deviceid": "wtdd-mac", "devicename": "wtdd"}))
-    print("1) Log in and grant in the browser (opening it now):\n   " + url, flush=True)
-    subprocess.run(["open", url], check=False)
+    print("1) Log in and grant in the browser" + (" (opening it now)" if not a.no_open else " (use the tab already open)") + ":\n   " + url, flush=True)
+    if not a.no_open:
+        subprocess.run(["open", url], check=False)
     print(f"2) Waiting up to {a.timeout:.0f}s for the redirect on http://localhost:{a.port}/callback ...", flush=True)
     code = _catch_code(a.port, a.timeout)
     if not code:
@@ -302,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     ra = sub.add_parser("remote-auth", help="cloud path: OAuth login -> tokens -> cloud link button -> app key (writes .env)")
     ra.add_argument("--port", type=int, default=8787); ra.add_argument("--timeout", type=float, default=180.0)
+    ra.add_argument("--no-open", action="store_true", help="do not open a new browser tab; wait for the existing one")
     ra.set_defaults(fn=remote_auth)
     bu = sub.add_parser("burst", help="rate-limit probe: n quick brightness PUTs on one light, stop at first 429")
     bu.add_argument("light"); bu.add_argument("--n", type=int, default=15); bu.set_defaults(fn=burst)
