@@ -181,7 +181,7 @@ class Memory(unittest.TestCase):
         self.assertIn("## what the dog did", ctx)
         self.assertIn("## what was reported", ctx)
         self.assertIn("## state", ctx)
-        self.assertNotIn("what the dog doin", memory.context("chat-B"))   # no cross-chat leak
+        self.assertNotIn("+15550001111: what the dog doin", memory.context("chat-B"))   # no cross-chat leak (the chat line, not a ledger row)
 
     def test_last_trigger_needs_known_housemate(self):
         self.assertIsNone(memory.last_trigger("chat-A", {}))
