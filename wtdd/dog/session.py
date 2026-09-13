@@ -26,6 +26,7 @@ un-receipted newest frame behind GET /dog/frame.jpg, the remote's live view at a
 """
 from __future__ import annotations
 import asyncio
+import json
 import math
 import threading
 import time
@@ -37,6 +38,7 @@ from . import nav
 from .body import MOVE_HZ, Body
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
+CAL_FILE = Path(__file__).resolve().parents[2] / "dog_cal.json"   # the last human calibration, so an API restart keeps it (runtime file)
 DRIVE_MAX = {"x": 0.4, "y": 0.4, "z": 0.6}   # m/s, m/s, rad/s for the hand-driven remote
 DRIVE_HOLD_S = 0.6                            # a velocity older than this is a released key
 LOOKS = ("level", "tilt", "sit")
@@ -67,6 +69,9 @@ class DogSession:
         self.moving = False
         self._driver: asyncio.Task | None = None
         self.cal: dict[str, Any] | None = None       # odometry <-> map tie (nav.calibration); None until "the dog is here"
+        if CAL_FILE.exists():   # a calibration survives an API restart, not a dog power cycle (the odometry frame resets then)
+            self.cal = json.loads(CAL_FILE.read_text())
+            log("dog", "calibration loaded", file=CAL_FILE.name, map=self.cal.get("map"), at=self.cal.get("at"))
         self.follow_state: dict[str, Any] = {}       # the follower's live status (GET /dog/state .follow)
         self._follower: asyncio.Task | None = None
 
@@ -117,7 +122,8 @@ class DogSession:
         """Ties the odometry pose right now to map point p facing `heading` (radians). One dog.calibrate row."""
         st = self.run(self.with_body(lambda b: b.fresh_state(required=True)))
         with step("dog", "dog.calibrate", "map", {"p": list(p), "heading_deg": round(math.degrees(heading), 1)}, self.map_pose(st)) as r:
-            self.cal = nav.calibration(st["position"], st["rpy"][2], p, heading)
+            self.cal = {**nav.calibration(st["position"], st["rpy"][2], p, heading), "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            CAL_FILE.write_text(json.dumps(self.cal))
             r["state_after"] = {"cal": self.cal, "map": self.map_pose(st)}
         log("dog", "calibrated", p=list(p), heading_deg=round(math.degrees(heading), 1))
         return self.map_pose(st)
