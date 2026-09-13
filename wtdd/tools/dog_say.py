@@ -28,8 +28,13 @@ SYSTEM = (
     '"person": <true if any person is in view in either picture, else false>, '
     '"out_of_place": <a list of short names of the things out of place, [] if none>, '
     '"pick": <1 or 2: the picture to send to the group, the one that shows the thing out of place or the person; 2 if nothing is>, '
-    '"why": <under 60 characters: why that picture>}. '
-    "If an image labeled tidy is given, it is the same spot when it was tidy: report only what is new or moved since."
+    '"why": <under 60 characters: why that picture>, '
+    '"detector_check": <"agree" if the detector labels given to you fit what you see, else one casual clause saying what the '
+    'mislabeled thing really is, like "it says bird but those are probably teri\'s socks">}. '
+    "If an image labeled tidy is given, it is the same spot when it was tidy: report only what is new or moved since. "
+    "When something on the floor belongs to someone (socks, clothes, a cup), guess an owner by first name from the "
+    "housemates list if one is given, casually ('probably teri's'), and fold the detector_check clause into say when it "
+    "is not 'agree'."
 )
 MAX_CHARS = 140
 WIDTH = 640
@@ -47,7 +52,7 @@ def _part(file: str) -> dict:
     return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()}}
 
 
-def see(file: str, baseline: str | None = None, file_down: str | None = None) -> dict:
+def see(file: str, baseline: str | None = None, file_down: str | None = None, labels: dict | None = None) -> dict:
     """The room frame at `file`, the floor frame at `file_down` (if the nod gave one) and the tidy baseline (if any) to
     the vision model. Returns {text, person, out_of_place, pick (1 floor | 2 room), why, model, ms}; raises on an empty
     or malformed reply (no canned sentence)."""
@@ -62,6 +67,13 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None) ->
         content += [{"type": "text", "text": "picture 1, looking down at the floor:"}, _part(file_down)]
     content += [{"type": "text", "text": ("picture 2, looking up at the room" if file_down else "this is now") + ". what do you see?"}, _part(file)]
     system = SYSTEM
+    from .. import config
+    names = config.maybe("WTDD_HOUSEMATE_NAMES")
+    if names:
+        system += f" The housemates are: {names}."
+    if labels:   # the detector's COCO labels on the floor picture, for the second opinion (it cannot say 'sock')
+        system += " The object detector (80 COCO classes, it cannot say sock or clothes) labeled the floor picture: " + \
+                  ", ".join(f"{k} x{v}" for k, v in labels.items()) + ". Check them against what you see."
     fixes = corrections()
     if fixes:   # what the housemates said the dog got wrong before: true, and part of the next call
         system += " The housemates corrected earlier reports, and they are right: " + " | ".join(fixes) + "."
@@ -78,6 +90,7 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None) ->
         if pick not in (1, 2):
             raise ValueError(f"pick must be 1 or 2, got {pick!r}")
         why = " ".join(str(d.get("why") or "").split())[:80]
+        check = " ".join(str(d.get("detector_check") or "agree").split())[:140]
     except (ValueError, KeyError, TypeError) as e:
         raise RuntimeError(f"vision model reply is not the expected JSON ({type(e).__name__}: {e}): {raw[:160]!r}") from None
     if not text:
@@ -86,8 +99,14 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None) ->
         log("watch", f"WARN sentence {len(text)} chars, cut to {MAX_CHARS}")
         text = text[:MAX_CHARS].rsplit(" ", 1)[0]
     ms = round((time.perf_counter() - t0) * 1000)
-    log("watch", f"saw: {text}", person=person, out_of_place=len(items), pick=pick, why=why, baseline=bool(baseline), model=out["model"], ms=ms)
-    return {"text": text, "person": person, "out_of_place": items, "pick": pick, "why": why, "model": out["model"], "ms": ms}
+    log("watch", f"saw: {text}", person=person, out_of_place=len(items), pick=pick, why=why, check=check, baseline=bool(baseline), model=out["model"], ms=ms)
+    if labels is not None:   # the second opinion as its own receipt: what the detector said vs what the model saw
+        from ..ledger import append
+        append({"step": "vision.check", "agent": "watch", "tool": "vision.check", "app": "openrouter", "ok": True,
+                "args": {"detector": labels, "file": file.split("/")[-1]},
+                "state_before": None, "state_after": {"out_of_place": items, "person": person, "detector_check": check, "agree": check.lower() == "agree"},
+                "response_or_error": text, "latency_ms": ms})
+    return {"text": text, "person": person, "out_of_place": items, "pick": pick, "why": why, "detector_check": check, "model": out["model"], "ms": ms}
 
 
 def corrections(n: int = 5) -> list[str]:
@@ -144,17 +163,24 @@ def look_and_see(look: str = "tilt", stop: int | None = None) -> dict:
     # at that stop; delete the file to run without one (the model then judges the frame on its own, which is logged).
     tidy = tidy_path(look, stop)
     has = os.path.isfile(tidy)
-    seen = see(shot["file"], tidy if has else None, shot.get("file_down"))
+    floor = shot.get("file_down") or shot["file"]
+    try:   # the detector first, on the floor picture, so the model gets its labels and can second-guess them
+        det = boxed(floor)
+    except Exception as e:  # noqa: BLE001  (its watch.boxes row has ok=False; the model then sees no labels)
+        det = {"error": f"{type(e).__name__}: {str(e)[:100]}"}
+    seen = see(shot["file"], tidy if has else None, shot.get("file_down"), labels=det.get("classes") if "classes" in det else None)
     files = {1: shot.get("file_down"), 2: shot["file"]}
     picked = files[seen["pick"]] or shot["file"]
-    text, det = seen["text"], None
-    try:   # the detector's boxes drawn on the picked frame; a failed detector is recorded and the plain frame is posted
-        det = boxed(picked)
-        picked = det["file"]
-        if det["classes"]:
-            text = f"{text} [detector: {', '.join(f'{k} x{v}' if v > 1 else k for k, v in det['classes'].items())}]"
-    except Exception as e:  # noqa: BLE001  (its watch.boxes row has ok=False; the post never claims boxes it lacks)
-        det = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+    text = seen["text"]
+    if "classes" in det:
+        try:
+            if picked != floor:   # the room picture was picked: box that one too
+                det = {**det, **boxed(picked)}
+            picked = det["file"]
+            if det["classes"]:
+                text = f"{text} [detector: {', '.join(f'{k} x{v}' if v > 1 else k for k, v in det['classes'].items())}]"
+        except Exception as e:  # noqa: BLE001  (the plain picked frame is posted; the failure is on its watch.boxes row)
+            det = {**det, "error": f"{type(e).__name__}: {str(e)[:100]}"}
     return {**shot, **seen, "text": text, "vision_ms": seen.pop("ms"), "stop": stop, "baseline": tidy if has else None,
             "file_up": shot["file"], "file": picked, "detector": det}   # file = the picture the model picked, boxed when the detector ran
 

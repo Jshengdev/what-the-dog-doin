@@ -10,6 +10,7 @@
   GET  /evals                     <repo>/evals.json, every scenario's newest trials (python -m wtdd.evals --write)
   GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms and the intruder flag
   POST /intruder {on}             arm/disarm the intruder watch (<repo>/intruder.on; python -m wtdd.watch sounds intruder_alarm)
+  POST /map/restore               ui/route-saved.json's path and stops back into the map (GET /route-saved.json serves it: the guide while drawing)
   GET  /dog/state                 the shared dog session's state (+ map pose, follow status); POST /dog/drive {x,y,z}, /dog/stop
   POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
@@ -115,6 +116,14 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         u = urlparse(self.path)
+        if u.path == "/map/restore":   # the saved route (ui/route-saved.json) back into the map; the current one goes to map.prev.json
+            saved = json.loads((UI / "route-saved.json").read_text())
+            m = json.loads(MAP.read_text())
+            MAP.with_name("map.prev.json").write_text(json.dumps(m, indent=2) + "\n")
+            m["path"], m["stops"] = saved["path"], saved.get("stops", [])
+            MAP.write_text(json.dumps(m, indent=2) + "\n")
+            log("api", "map restored from route-saved.json", points=len(m["path"]), stops=m["stops"])
+            return self._json(200, {"ok": True, "path_pts": len(m["path"]), "stops": m["stops"]})
         if u.path == "/intruder":   # {on}: arm or disarm the intruder watch (python -m wtdd.watch acts on the file)
             on = bool(self._body().get("on", True))
             f = ROOT / "intruder.on"

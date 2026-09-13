@@ -31,6 +31,7 @@
   svg.map.placing { cursor: crosshair; }
   .room { fill: none; stroke: none; } .room.here { fill: rgba(11,13,196,.05); }
   .path { fill: none; stroke: rgba(38,35,35,.55); stroke-width: 3; stroke-dasharray: 6 8; }
+  .guide { fill: none; stroke: rgba(11,13,196,.22); stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .pt { fill: #fff; stroke: rgba(38,35,35,.6); stroke-width: 2; cursor: grab; }
   .pt.stop { fill: var(--live, #0b0dc4); stroke: #fff; stroke-width: 3; }
   .dot { fill: var(--live, #0b0dc4); } .dot-halo { fill: var(--live, #0b0dc4); opacity: .18; } .field { fill: rgba(11,13,196,.04); stroke: var(--live, #0b0dc4); stroke-opacity: .35; stroke-dasharray: 4 6; }
@@ -82,6 +83,8 @@ function App() {
   const [stopAt, setStopAt] = useState(null);
   const [admin, setAdmin] = useState(location.hash === "#admin");   // demo view by default; #admin shows every panel
   useEffect(() => { const f = () => setAdmin(location.hash === "#admin"); window.addEventListener("hashchange", f); return () => window.removeEventListener("hashchange", f); }, []);
+  const [guide, setGuide] = useState(null);   // the saved route, drawn faintly while drawing a path (GET /route-saved.json)
+  useEffect(() => { fetch("/route-saved.json").then(r => r.json()).then(setGuide).catch(() => {}); }, []);
   const [dogDrag, setDogDrag] = useState(null);   // the pose being dragged (dot = position, cone tip = heading); posted as a calibration on release
   const [watch, setWatch] = useState(null);      // GET /watch: the detector (python -m wtdd.watch), fresh when age_ms < 3000
   const [trials, setTrials] = useState(null);    // GET /evals: the trials table (python -m wtdd.evals --write)
@@ -189,6 +192,7 @@ function App() {
             <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
             <button class=${mode === "here" ? "on" : ""} onClick=${() => { setMode(mode === "here" ? null : "here"); setPlacing(null); }}>${mode === "here" ? "click where the dog is" : "dog is here…"}</button>
+            <button class="small" title="ui/route-saved.json back into the map" onClick=${() => post("/map/restore", {}).then(r => r.json()).then(o => { setLast({ ...o, tool: "restore route" }); fetch("/map").then(r => r.json()).then(setMap); })}>restore saved route</button>
             <button class="key" onClick=${saveMap}>save</button>
             ${last && last.tool === "save map" && html`<span class=${"mono " + (last.ok ? "ok" : "bad")}>${last.ok ? "saved" : last.error}</span>`}
             ${last && last.rec && last.rec.problems?.length ? html`<span class="mono bad">recorded with problems: ${last.rec.problems.join("; ")}</span>` : ""}
@@ -203,10 +207,11 @@ function App() {
             ${cmd("stranger alarm now", "intruder_alarm", {})}
             ${map && html`<label class="k">brightness <input type="range" min="0.5" max="3" step="0.1" value=${ent.gain ?? 1} onInput=${e => setEnt("gain", +e.target.value)}/> ×${ent.gain ?? 1}</label>`}
           </div>`}
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click the floor to add a point at the end · click an existing point to DELETE it · leave draw mode to drag points or double-click them into stops" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click the floor to add a point at the end (the faint blue line is the saved route, trace it) · click an existing point to DELETE it · leave draw mode to drag points or double-click them into stops" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
             ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
+            ${mode === "path" && guide?.path && html`<polyline class="guide" points=${guide.path.map(p => p.join(",")).join(" ")}/>`}
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
             ${map.path.map((p, i) => { const st = (map.stops || []).includes(i); return html`<g key=${"p" + i}>
               <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${mode === "path" ? (e => e.stopPropagation()) : onDown("path", i, 0)} onClick=${e => { e.stopPropagation(); if (mode === "path") deletePoint(i); }} onDoubleClick=${e => { e.stopPropagation(); if (mode !== "path") toggleStop(i); }}/>
