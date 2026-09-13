@@ -1,8 +1,9 @@
 """Look and say: the dog nods and photographs (dog_look, tilt by default), the frame goes to the vision model, and the
 one sentence plus the photo are posted to the castle behind the gate and the never-twice claim. Returns the look's
 fields (file_up, file_down, pitch_deg, pitch_down_deg, fired, attempts), text, person, out_of_place, pick (1 = the
-floor picture, 2 = the room), why, file (the picked one, the one posted), baseline, model, vision_ms and the confirmed
-post row. look_and_see() is the half without the post: the chat listener calls it and posts under the wake message's
+floor picture, 2 = the room), why, file (the picked one, boxed by the detector when it ran, the one posted), detector
+({file, classes, n, ms} or {error}), baseline, model, vision_ms and the confirmed post row. The caption gets a
+"[detector: cup, chair x2]" suffix when the detector saw something. look_and_see() is the half without the post: the chat listener calls it and posts under the wake message's
 guid (say:<guid>), and sounds light_alarm when person is true.
 
   python -m wtdd dog_say                          nod, look, say, post (trigger defaults to say-<epoch>)
@@ -90,6 +91,29 @@ def tidy_path(look: str, stop: int | None = None) -> str:
     return os.path.expanduser(f"{PICTURES}/tidy-{look}" + (f"-stop{stop}" if stop is not None else "") + ".jpg")
 
 
+def boxed(file: str) -> dict:
+    """The detector (YOLO11n, wtdd/watch.py) over the exact frame, in its own process: returns {file (the boxed copy),
+    classes, n, ms}. A failure raises; the caller decides (dog_say posts the plain frame and records the error)."""
+    import json
+    import subprocess
+    import sys
+    import time
+    from ..config import ROOT
+    from ..ledger import log, step
+    out = file.rsplit(".", 1)[0] + "-boxed.jpg"
+    t0 = time.perf_counter()
+    with step("watch", "watch.boxes", "yolo", {"file": file.split("/")[-1]}) as r:
+        pr = subprocess.run([sys.executable, "-m", "wtdd.watch", "--source", file, "--once", "--out", out],
+                            capture_output=True, text=True, timeout=90, cwd=ROOT)
+        if pr.returncode != 0 or not pr.stdout.strip():
+            raise RuntimeError(f"detector rc={pr.returncode}: {pr.stderr.strip()[-200:]}")
+        d = json.loads(pr.stdout.strip().splitlines()[-1])
+        res = {"file": d["file"], "classes": d["classes"], "n": d["n"], "ms": round((time.perf_counter() - t0) * 1000)}
+        r["state_after"] = res
+    log("watch", "boxes", n=res["n"], classes=res["classes"], ms=res["ms"])
+    return res
+
+
 def look_and_see(look: str = "tilt", stop: int | None = None) -> dict:
     """The look (through the API while it owns the dog), then the sentence. Posts nothing. `stop` is the map stop index
     the dog is at, which picks that stop's tidy baseline when one was captured."""
@@ -104,8 +128,17 @@ def look_and_see(look: str = "tilt", stop: int | None = None) -> dict:
     has = os.path.isfile(tidy)
     seen = see(shot["file"], tidy if has else None, shot.get("file_down"))
     files = {1: shot.get("file_down"), 2: shot["file"]}
-    return {**shot, **seen, "vision_ms": seen.pop("ms"), "stop": stop, "baseline": tidy if has else None,
-            "file_up": shot["file"], "file": files[seen["pick"]] or shot["file"]}   # file = the picture the model picked
+    picked = files[seen["pick"]] or shot["file"]
+    text, det = seen["text"], None
+    try:   # the detector's boxes drawn on the picked frame; a failed detector is recorded and the plain frame is posted
+        det = boxed(picked)
+        picked = det["file"]
+        if det["classes"]:
+            text = f"{text} [detector: {', '.join(f'{k} x{v}' if v > 1 else k for k, v in det['classes'].items())}]"
+    except Exception as e:  # noqa: BLE001  (its watch.boxes row has ok=False; the post never claims boxes it lacks)
+        det = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+    return {**shot, **seen, "text": text, "vision_ms": seen.pop("ms"), "stop": stop, "baseline": tidy if has else None,
+            "file_up": shot["file"], "file": picked, "detector": det}   # file = the picture the model picked, boxed when the detector ran
 
 
 def run(look="tilt", trigger=None, baseline=False, stop=None):

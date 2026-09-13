@@ -7,6 +7,7 @@ are not rows.
 
   python -m wtdd.watch                              live from the API, 4 frames a second
   python -m wtdd.watch --source ~/Pictures/wtdd/dog-live.jpg --once     one file, prints the detections
+  python -m wtdd.watch --source look-down.jpg --once --out look-down-boxed.jpg   dog_say's one-shot: the boxed copy of the frame it posts
 
 Facts. cv2 lives here and never in the API process (its ffmpeg clashes with PyAV's). COCO names cup, bowl, bottle,
 wine glass, chair, couch, person, backpack, handbag, suitcase, laptop, cell phone, book ... and does NOT name socks,
@@ -46,20 +47,22 @@ def detect(model, img: bytes) -> tuple[list[dict], object, int]:
     return boxes, r.plot(), ms
 
 
-def publish(boxes: list[dict], plotted, ms: int, source: str) -> dict:
+def publish(boxes: list[dict], plotted, ms: int, source: str, out: Path = OUT, state: bool = True) -> dict:
+    """Writes the boxed JPEG to `out` (atomic) and, when `state`, the counts to watch.json for the remote."""
     import cv2
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    tmp = OUT.with_name("watch.tmp.jpg")
-    cv2.imwrite(str(tmp), plotted, [cv2.IMWRITE_JPEG_QUALITY, 75])
-    os.replace(tmp, OUT)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(out.stem + ".tmp.jpg")
+    cv2.imwrite(str(tmp), plotted, [cv2.IMWRITE_JPEG_QUALITY, 80 if out != OUT else 75])
+    os.replace(tmp, out)
     classes: dict[str, int] = {}
     for b in boxes:
         classes[b["name"]] = classes.get(b["name"], 0) + 1
     d = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "t": time.time(), "ms": ms, "n": len(boxes), "classes": classes,
-         "boxes": boxes, "source": source, "model": MODEL}
-    tmpj = WATCH.with_suffix(".tmp")
-    tmpj.write_text(json.dumps(d))
-    os.replace(tmpj, WATCH)
+         "boxes": boxes, "source": source, "model": MODEL, "file": str(out)}
+    if state:
+        tmpj = WATCH.with_suffix(".tmp")
+        tmpj.write_text(json.dumps(d))
+        os.replace(tmpj, WATCH)
     return d
 
 
@@ -68,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source", default=f"{API}/dog/frame.jpg", help="a URL (default: the API's live frame) or an image file")
     p.add_argument("--hz", type=float, default=4.0)
     p.add_argument("--once", action="store_true")
+    p.add_argument("--out", help="write the boxed image here instead of the live watch.jpg (and leave watch.json alone): one-shot use by dog_say")
     a = p.parse_args(argv)
+    out_path = Path(a.out).expanduser() if a.out else OUT
     from ultralytics import YOLO
     t0 = time.perf_counter()
     model = YOLO(MODEL)
@@ -89,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 img = Path(a.source).expanduser().read_bytes()
             boxes, plotted, ms = detect(model, img)
-            d = publish(boxes, plotted, ms, a.source)
+            d = publish(boxes, plotted, ms, a.source, out_path, state=not a.out)
             n += 1
             warned = 0
             now = set(d["classes"])
@@ -116,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(2)
             continue
         if a.once:
-            print(json.dumps({k: d[k] for k in ("ts", "ms", "n", "classes", "boxes")}, indent=1))
+            print(json.dumps({k: d[k] for k in ("ts", "ms", "n", "classes", "boxes", "file")}))
             return 0
         time.sleep(max(0.0, 1 / a.hz))
 
