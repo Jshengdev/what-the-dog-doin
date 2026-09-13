@@ -37,7 +37,8 @@
   .lamp { stroke: #262323; stroke-width: 3; cursor: grab; } .lamp-glow { fill: #ffcc44; }
   .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; } .strip-glow { stroke: #ffcc44; stroke-width: 24; stroke-linecap: round; }
   .handle { fill: #fff; stroke: #262323; stroke-width: 2; cursor: grab; }
-  .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
+  .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; cursor: grab; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
+  .cone { fill: rgba(232,89,12,.14); stroke: rgba(232,89,12,.6); stroke-width: 2; } .conetip { fill: #fff; stroke: #e8590c; stroke-width: 3; cursor: grab; }
   .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 17px; fill: #262323; paint-order: stroke; stroke: #fbfaf7; stroke-width: 5px; user-select: none; pointer-events: none; }
   .levels { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; }
   .bar { display: inline-block; height: 7px; background: #ffcc44; border-radius: 4px; vertical-align: middle; margin-left: 8px; transition: width .2s; }
@@ -77,6 +78,7 @@ function App() {
   const [here, setHere] = useState(null);
   const [levels, setLevels] = useState({});
   const [stopAt, setStopAt] = useState(null);
+  const [dogDrag, setDogDrag] = useState(null);   // the pose being dragged (dot = position, cone tip = heading); posted as a calibration on release
   const [watch, setWatch] = useState(null);      // GET /watch: the detector (python -m wtdd.watch), fresh when age_ms < 3000
   const [trials, setTrials] = useState(null);    // GET /evals: the trials table (python -m wtdd.evals --write)
   useEffect(() => { const t = setInterval(() => fetch("/watch").then(r => r.json()).then(setWatch).catch(() => {}), 500); return () => clearInterval(t); }, []);
@@ -112,7 +114,7 @@ function App() {
     const kd = e => { if (e.target.tagName === "INPUT" || e.repeat) return; press(e.key.toLowerCase()); };
     const ku = e => release(e.key.toLowerCase());
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
-    const t = setInterval(() => fetch(`${API}/dog/state`).then(r => r.json()).then(setDog).catch(() => {}), 1000);
+    const t = setInterval(() => fetch(`${API}/dog/state`).then(r => r.json()).then(d => { setDog(d); if (!drag.current) setDogDrag(null); }).catch(() => {}), 1000);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); clearInterval(t); };
   }, []);
   const lookShot = async kind => { const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, file: out.result.file, pitch: out.result.pitch_deg, kind }); };
@@ -146,10 +148,15 @@ function App() {
   const onMove = e => {
     if (!drag.current) return;
     moved.current = true; const p = toMap(e); const { kind, li, pi } = drag.current;
+    if (kind === "dog") { setDogDrag(o => ({ ...(o || dog.map), p })); return; }
+    if (kind === "cone") { setDogDrag(o => { const q = (o || dog.map).p; return { p: q, heading_deg: Math.round(Math.atan2(p[1] - q[1], p[0] - q[0]) * 1800 / Math.PI) / 10 }; }); return; }
     setMap(m => kind === "path" ? { ...m, path: m.path.map((q, i) => i === li ? p : q) }
                              : { ...m, lights: m.lights.map((L, i) => i !== li ? L : { ...L, pts: L.pts.map((q, j) => j === pi ? p : q) }) });
   };
-  const onUp = () => { drag.current = null; };
+  const onUp = () => {
+    const d = drag.current; drag.current = null;
+    if (d && (d.kind === "dog" || d.kind === "cone")) setDogDrag(o => { if (o) post("/dog/calibrate", { p: o.p, heading_deg: o.heading_deg }).then(r => r.json()).then(setLast); return o; });
+  };
   const toggleStop = i => setMap(m => { const st = new Set(m.stops || []); st.has(i) ? st.delete(i) : st.add(i); return { ...m, stops: [...st].sort((a, b) => a - b) }; });
   const blink = L => run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 });
   const identify = L => { if (!moved.current) blink(L); };
@@ -175,7 +182,7 @@ function App() {
             <button class="key" onClick=${saveMap}>save</button>
             <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · double-click a light to relabel · save"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
             ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
@@ -198,7 +205,16 @@ function App() {
                 <text class="lbl" x=${x} y=${y - 22} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
-            ${dog?.map && html`<g><line class="dognose" x1=${dog.map.p[0]} y1=${dog.map.p[1]} x2=${dog.map.p[0] + 34 * Math.cos(dog.map.heading_deg * Math.PI / 180)} y2=${dog.map.p[1] + 34 * Math.sin(dog.map.heading_deg * Math.PI / 180)}/><circle class="dogdot" cx=${dog.map.p[0]} cy=${dog.map.p[1]} r="13"/><text class="lbl" x=${dog.map.p[0] + 18} y=${dog.map.p[1] + 30}>dog</text></g>`}
+            ${(dogDrag || dog?.map) && (() => {
+              const D = dogDrag || dog.map, [x, y] = D.p, h = D.heading_deg * Math.PI / 180, L = 170, half = 0.5;   // the cone: where it points, about 60 degrees wide
+              const a = [x + L * Math.cos(h - half), y + L * Math.sin(h - half)], b = [x + L * Math.cos(h + half), y + L * Math.sin(h + half)], tip = [x + L * Math.cos(h), y + L * Math.sin(h)];
+              return html`<g>
+                <path class="cone" d=${`M ${x} ${y} L ${a[0]} ${a[1]} A ${L} ${L} 0 0 1 ${b[0]} ${b[1]} Z`}/>
+                <line class="dognose" x1=${x} y1=${y} x2=${tip[0]} y2=${tip[1]}/>
+                <circle class="conetip" cx=${tip[0]} cy=${tip[1]} r="11" onPointerDown=${onDown("cone", 0, 0)} onClick=${e => e.stopPropagation()}/>
+                <circle class="dogdot" cx=${x} cy=${y} r="14" onPointerDown=${onDown("dog", 0, 0)} onClick=${e => e.stopPropagation()}/>
+                <text class="lbl" x=${x + 18} y=${y + 32}>dog${dogDrag ? " · release to set" : ""} · ${Math.round(D.heading_deg)}°</text></g>`;
+            })()}
             ${dot && html`<circle class="field" cx=${dot[0]} cy=${dot[1]} r=${ent.radius_px || 220}/><circle class="dot-halo" cx=${dot[0]} cy=${dot[1]} r="26"/><circle class="dot" cx=${dot[0]} cy=${dot[1]} r="11"/>`}
           </svg>`}
         </div>
@@ -211,6 +227,7 @@ function App() {
           <div class="row tight">${key("a", "A ◀")}${key("s", "S ▼")}${key("d", "D ▶")}<button class="small" onClick=${() => post("/dog/stop")}>stop</button></div>
           <div class="row tight">
             <button class="small" disabled=${!map || (map.path || []).length < 2} title="the dog stands on path point 1 facing point 2" onClick=${() => post("/dog/calibrate", { p: map.path[0], toward: map.path[1] }).then(r => r.json()).then(setLast)}>at path start, facing pt 2</button>
+            <button class="small" disabled=${!dog?.map || !map || (map.path || []).length < 2} title="keep the position, point the nose at the next path point ahead of the dog" onClick=${() => { const P = map.path, q = dog.map.p; let k = 0, best = 1e9; P.forEach((pt, i) => { const d = Math.hypot(pt[0] - q[0], pt[1] - q[1]); if (d < best) { best = d; k = i; } }); const nxt = P[Math.min(k + 1, P.length - 1)]; post("/dog/calibrate", { p: q, toward: nxt }).then(r => r.json()).then(setLast); }}>facing next pt</button>
             <button class=${"small" + (dog?.follow?.active ? " on" : "")} disabled=${!dog?.calibrated || dog?.follow?.active} onClick=${() => post("/dog/follow", {}).then(r => r.json()).then(setLast)}>follow the path</button>
             <button class="small" disabled=${dog?.follow?.stopped_at == null} onClick=${() => post("/dog/resume", {}).then(r => r.json()).then(setLast)}>resume</button>
             <span class="mono">${dog?.map ? `thinks: ${dog.map.p[0]}, ${dog.map.p[1]} · ${dog.map.heading_deg}°` : "not calibrated"}${dog?.follow?.active ? ` · wp ${dog.follow.i}/${dog.follow.n - 1} · ${dog.follow.dist_px ?? "?"} px · ${dog.follow.err_deg ?? "?"}°${dog.follow.stopped_at != null ? ` · stopped at ${dog.follow.stopped_at}` : ""}` : dog?.follow?.error ? ` · follow: ${dog.follow.error}` : dog?.follow?.done ? ` · followed ${dog.follow.reached.length} waypoints` : ""}</span>
