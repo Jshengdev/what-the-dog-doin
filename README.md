@@ -108,6 +108,8 @@ On the remote (http://127.0.0.1:7788/): drag the orange dog to where it stands a
 The demo run at 15:16, from the ledger (`docs/evidence/ledger-take-2026-09-13.jsonl`), including what went wrong:
 
 1. 15:16:33 a housemate texts "what the dog doin". The picture and "dog doin" land within five seconds.
+
+<p align="center"><img src="docs/media/chat-wake-and-picture.png" alt="the group chat: 'What the dog doin', the picture, 'dog doin'" width="420"><br><sub>docs/media/chat-wake-and-picture.png: the trigger, the picture, "dog doin", as the group saw it (sender's name cropped out)</sub></p>
 2. The dog drives the recorded route, the lights following its believed position. At stop 1 it takes the flat look: the detector says "couch"; the vision model answers "it says couch but that is really a person on the couch", names a blanket and a cup as out of place, and the group gets "someone on the couch with their feet up. a red blanket on the floor. probably teri's cup on …" with the boxed photo.
 3. At waypoint 14 the follower stops 56 px short and times out after 30 s (the dog's obstacle-avoidance service had stopped answering after a battery swap, so the run was driving without it, by explicit choice, and that is on the `dog.follow` row). The round does not pretend: it looks where it stands, finds someone at the table ("it says chair x2 but that is really a backpack and a person"), posts the photo, asks **"who dis?!"** and holds.
 4. 15:18:22 a housemate answers "Idk". The verdict row says stranger; "STRANGER DANGER!!!" lands three times; all four Hue lights and the strip strobe for five seconds and are put back exactly as they were (`lights.alarm`: 5 signaled, 5 restored, 0 errors).
