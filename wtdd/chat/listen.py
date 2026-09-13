@@ -1,7 +1,7 @@
 """The ears' state machine: a wake phrase arms the dog for listen_s; while armed, messages are matched against the
 command list and run; "stop" disarms. Every wake, command, and ask is a ledger row (chat.wake / chat.command /
 chat.ask); every post goes through __main__.post keyed on the guid of the message that caused it
-(wake:/fire:/doin:/done:/ack:/res:/stop:/ai:<guid>), so a re-read message can never post twice.
+(wake:/fire:/doin:/say:/alarm:/done:/ack:/res:/stop:/ai:<guid>), so a re-read message can never post twice.
 
 Run: python -m wtdd.chat listen [--dry-run] [--every 2] [--listen-s 120] [--once]
      python -m wtdd.chat simulate "what the dog doin" "lights off" "stop"   (dry-run posts, REAL commands)
@@ -10,10 +10,12 @@ Facts. No replay at boot: the watermark starts at MAX(ROWID). WTDD_LISTEN_S (def
 recognized message re-arms it. Who may wake the dog: any member while HOUSEMATES is empty (one WARN), else the listed
 handles; from-me rows only with WTDD_ALLOW_SELF=1 (Johnny's phone shares the dog's account), and even then the dog's
 own posts are refused by confirmed guid and by the opening words of its replies. WTDD_WAKE_SHOW=1 makes a wake run the
-demo in Johnny's order (dog_on_fire picture, "dog doin", walk_path, "dog done") instead of a text ack. WTDD_AGENT=1
+demo in Johnny's order (dog_on_fire picture, "dog doin", the walk with a look-and-say at every stop on the map: nod,
+photo, one sentence from the vision model posted with the photo, and with WTDD_ALARM=1 the stranger alarm when a person
+is in frame, "yo, we don't know this guy" plus light_alarm; then "dog done") instead of a text ack. WTDD_AGENT=1
 sends an armed message that is not a fixed command to wtdd.agent.ask with the chat context. A failed command is
 reported to the group as its class and message, never faked. Live wake demo receipt (2026-09-13 03:0x, in
-docs/RELIABILITY-BRIEF.md): "what teh dog doin" recognized at 0.94, picture 3.4 s, walk 63.6 s, 3 posts, 3 read-back
+README.md): "what teh dog doin" recognized at 0.94, picture 3.4 s, walk 63.6 s, 3 posts, 3 read-back
 guids, 0 duplicates."""
 from __future__ import annotations
 import time
@@ -27,7 +29,7 @@ from .housemates import HOUSEMATES, name as hname
 from .triggers import commands as command_list, is_wake, match_command, wake_phrases
 
 Poster = Callable[[str, str, str, str | None, str | None], Any]   # (guid, trigger_key, kind, text, file)
-OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "ok, done listening",
+OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "here's what i see", "yo, we don't know", "ok, done listening",
                "living room lights", "did:", "listening for")   # how the dog's own text posts begin
 
 
@@ -74,22 +76,55 @@ class Listener:
                 "state_before": None, "state_after": {"armed": self.armed, "armed_by": self.armed_by},
                 "response_or_error": None, "latency_ms": 0})
 
-    def wake_show(self, m: dict[str, Any]) -> None:
-        """The wake demo, in Johnny's order: the picture, then "dog doin" as the walk starts, the walk (the same one the
-        remote's button runs), then "dog done". Each part is a tool call and a gated post keyed on the wake message."""
+    def look_and_say(self, m: dict[str, Any], at: int | None = None) -> None:
+        """A look point: nod, photograph, one sentence from the vision model, posted with the photo; a person in frame
+        sounds the alarm (WTDD_ALARM) and posts the line, and the strobe is given its seconds before the walk resumes.
+        Keys carry the stop index, so every stop of one wake is its own never-twice claim. A failure is posted as its
+        error, never faked."""
         from .. import tools
+        from ..tools.dog_say import look_and_see
+        k = m["guid"] + (f":{at}" if at is not None else "")
+        try:
+            seen = look_and_see(stop=at)
+            self.say(f"say:{k}", seen["text"], seen["file"])
+        except Exception as e:  # noqa: BLE001
+            self.say(f"say:{k}", f"couldn't look: {type(e).__name__}: {str(e)[:100]}")
+            return
+        if seen.get("person") and _flag("WTDD_ALARM"):   # anyone in frame is a stranger: recognizing housemates is not built
+            self.say(f"alarm:{k}", "yo, we don't know this guy")
+            try:
+                alarm = tools.call("light_alarm")
+                log("chat", "alarm", signaled=len(alarm["signaled"]), errors=len(alarm["errors"]))
+                time.sleep(float(alarm["seconds"]))
+            except Exception as e:  # noqa: BLE001
+                self.say(f"alarm-fail:{k}", f"couldn't sound the alarm: {type(e).__name__}: {str(e)[:100]}")
+
+    def wake_show(self, m: dict[str, Any]) -> None:
+        """The wake demo, in Johnny's order: the picture, "dog doin" as the walk starts, the walk (wtdd/field.py, the same
+        one the remote's button runs) with look_and_say at every stop drawn on the map (or once at the end when the map
+        has no stops), then "dog done". Each part is a tool call and a gated post keyed on the wake message; a failed
+        part is posted as its error, never faked, and the sequence still ends with "dog done"."""
+        from .. import tools
+        from ..field import walk
         try:
             pic = tools.call("dog_on_fire")
             self.say(f"fire:{m['guid']}", None, pic["file"])
         except Exception as e:  # noqa: BLE001
             self.say(f"fire:{m['guid']}", f"couldn't make the picture: {type(e).__name__}: {str(e)[:100]}")
         self.say(f"doin:{m['guid']}", "dog doin")
+        walked: str | None = None
+        stops: list[int] = []
         try:
-            out = tools.call("walk_path")
-            log("chat", "walked", seconds=out["seconds"], writes=out["writes"], errors=out["errors"], rooms=",".join(out["rooms"]))
-            self.say(f"done:{m['guid']}", "dog done" + (f" ({out['errors']} light write(s) failed, see the ledger)" if out.get("errors") else ""))
+            out = walk(on_stop=lambda i, p, here: self.look_and_say(m, i))
+            stops = out.get("stops", [])
+            log("chat", "walked", seconds=out["seconds"], writes=out["writes"], errors=out["errors"], stops=len(stops), rooms=",".join(out["rooms"]))
+            if out.get("errors"):
+                walked = f"{out['errors']} light write(s) failed, see the ledger"
         except Exception as e:  # noqa: BLE001
-            self.say(f"done:{m['guid']}", f"dog done, but couldn't walk the path: {type(e).__name__}: {str(e)[:100]}")
+            walked = f"couldn't walk the path: {type(e).__name__}: {str(e)[:100]}"
+        if not stops:                      # no stop reached: the look point is wherever the dog is now
+            self.look_and_say(m)
+        self.say(f"done:{m['guid']}", "dog done" + (f" ({walked})" if walked else ""))
 
     def handle(self, m: dict[str, Any]) -> None:
         text = m["text"]

@@ -14,7 +14,8 @@
 
 Every post, from any entry point (this CLI, the chat_post tool, the HTTP API, the MCP server, the agent loop, the
 listener), goes through post(): gate (chat.gate row), claim (chat.claim row), then the send inside one chat.post row
-whose state_after is the confirmed from-me row {guid, rowid, ts}, then memory.confirm. A refused gate or claim is a
+whose state_after is the confirmed from-me row {guid, rowid, ts}, then memory.confirm (a photo's caption is a second
+bubble, confirmed under <trigger>#caption so posted_guids() knows it too). A refused gate or claim is a
 ledger row with ok=False and a PermissionError (exit 2 here). --guid defaults to WTDD_CHAT_GUID; --trigger is the
 idempotence key (default cli:<epoch>). Only this CLI prints the confirmed row to stdout: library callers keep stdout
 clean because the MCP server speaks its protocol there and `python -m wtdd chat_post` prints the result itself.
@@ -73,6 +74,9 @@ def post_step(guid: str, trigger: str, kind: str, text: str | None, file: str | 
         row = send.send_file(guid, file, text) if file else send.send_text(guid, text or "")
         r["state_after"] = row
     memory.confirm(trigger, row["guid"])
+    if file and text:   # the caption is a second from-me bubble: claimed and confirmed under <trigger>#caption so the
+        memory.claim(f"{trigger}#caption")   # listener (WTDD_ALLOW_SELF) can never read the dog's own sentence as a command
+        memory.confirm(f"{trigger}#caption", row["caption"]["guid"])
     return row
 
 

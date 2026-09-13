@@ -4,7 +4,7 @@ You are an engineering partner building **what-the-dog-doin** at hackathon pace,
 
 The brief in one line: *build one useful, multi-step AI agent; connect it to at least three external apps; show how you know it works.* The third clause is not a footnote. Reliability and evaluation is scored on its own (25%), and the submission requires a written system and reliability brief. Evidence is a deliverable, not a nice-to-have.
 
-**Stack:** one Python package (`wtdd/`), one venv, no framework. Devices: Unitree Go2 over `unitree_webrtc_connect`, Philips Hue over the cloud Remote API, a Tuya LED strip over local protocol 3.5, iMessage through this Mac's own Messages account. Models through OpenRouter (`wtdd/llm.py`). The map is `README.md`; what a file does lives in that file's docstring, and there are no other docs except the two submission artifacts in `docs/`.
+**Stack:** one Python package (`wtdd/`), one venv, no framework. Devices: Unitree Go2 over `unitree_webrtc_connect`, Philips Hue over the cloud Remote API, a Tuya LED strip over local protocol 3.5, iMessage through this Mac's own Messages account. Models through OpenRouter (`wtdd/llm.py`). The map is `README.md`; what a file does lives in that file's docstring, and there are no other docs except the video shot list in `docs/`.
 
 **The core tradeoff for this repo:** bias toward *shipping a working agent fast* over completeness and polish. "Fast" means *lazy-senior-dev fast* (reuse, fewest lines, fewest deps), NOT *fake-it fast*. Every step the agent claims to have taken must have actually been taken, and there must be a record of it. The rule that separates a real multi-app agent from a demo puppet is §2. §3 is how we win the 25%.
 
@@ -22,7 +22,7 @@ These guidelines bias toward caution over speed. For trivial tasks, use judgment
 
 Execution plus reliability is 55%. A boring agent that provably works beats a clever one that might.
 
-**Submission (all three, or nothing counts):** working project or repository; two-minute demo; short system and reliability brief ([`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md)).
+**Submission (all three, or nothing counts):** working project or repository; two-minute demo; short system and reliability brief (the "How we know it works" section of [`README.md`](./README.md)).
 
 **Clock (Pacific):** build 9:30 AM to 4:00 PM, 6.5 hours. Judging 4:00 to 4:40. Hard stop. Working backwards: agent frozen by 3:00, demo recorded by 3:30, brief finished by 3:45.
 
@@ -30,7 +30,7 @@ Execution plus reliability is 55%. A boring agent that provably works beats a cl
 
 1. [`README.md`](./README.md): how to run it and where everything is.
 2. The docstring at the top of whichever file you are about to touch. It states purpose, how to run, and the facts measured on the real devices (protocol details, timings, gotchas). Keep it true when you change the file.
-3. [`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md): the submission doc and the measured runs. Fill it as facts land.
+3. [`README.md`](./README.md) "How we know it works": the submission brief and the measured runs. Fill it as facts land.
 4. [`docs/DEMO-SCRIPT.md`](./docs/DEMO-SCRIPT.md): the two-minute video, shot by shot.
 
 ---
@@ -160,7 +160,7 @@ Under hackathon pressure he wants the agent working first. When you cut a corner
 4. Run it for real. Read the ledger. No mocks on the demo path.
 5. Write the first eval scenario the moment the path runs once. Keep it green at every commit.
 6. Anything that failed silently: make it fail loud, then fix it via the logs.
-7. Commit per atomic idea. Fill `docs/RELIABILITY-BRIEF.md` as facts land, not at the end.
+7. Commit per atomic idea. Fill the README's "How we know it works" as facts land, not at the end.
 8. 3:00 PM freeze. 3:30 demo recorded. 3:45 brief done. Ship.
 
 ## 8. Run it

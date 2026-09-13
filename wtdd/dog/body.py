@@ -521,18 +521,22 @@ class Body:
                 raise TimeoutError(f"no video frame within {FRAME_TIMEOUT_S}s of switching the channel on (frames=0)")
             await asyncio.sleep(0.05)
 
+    async def jpeg(self, quality: int = 70) -> tuple[bytes, Any, float]:
+        """The newest frame as JPEG bytes (PIL via av; never cv2), plus the frame and its age. No ledger row: this is
+        the read behind the remote's live view (GET /dog/frame.jpg); frame() is the receipted capture."""
+        await self._video_on()
+        age = time.monotonic() - self._fr_at
+        if age > FRAME_STALE_S:
+            raise RuntimeError(f"video stale: last frame {age:.1f}s ago (frames={self._fr_n})")
+        f = self._fr
+        buf = io.BytesIO()
+        f.to_image().save(buf, "JPEG", quality=quality)
+        return buf.getvalue(), f, age
+
     async def frame(self, out: Path | str | None = None) -> bytes:
-        """JPEG bytes of the newest video frame (PIL via av; never cv2). Writes `out` if given.
-        The row carries the sha256 of the exact bytes."""
+        """JPEG bytes of the newest video frame. Writes `out` if given. The row carries the sha256 of the exact bytes."""
         with step("dog", "dog.frame", "unitree", {"out": str(out) if out else None}, self.state()) as r:
-            await self._video_on()
-            age = time.monotonic() - self._fr_at
-            if age > FRAME_STALE_S:
-                raise RuntimeError(f"video stale: last frame {age:.1f}s ago (frames={self._fr_n})")
-            f = self._fr
-            buf = io.BytesIO()
-            f.to_image().save(buf, "JPEG", quality=85)
-            data = buf.getvalue()
+            data, f, age = await self.jpeg(quality=85)
             sha = hashlib.sha256(data).hexdigest()
             if out:
                 out = Path(out).expanduser()

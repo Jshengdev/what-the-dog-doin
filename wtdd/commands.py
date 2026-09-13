@@ -36,20 +36,22 @@ def lights(on: bool, bri: float | None = None) -> str:
 
 
 def _via_api(tool: str, **args: Any) -> Any | None:
-    """While the API process runs it owns the dog's single WebRTC slot, so any other process sends dog tools to it.
-    Returns None when no API is up (then this process opens its own session). The API process itself never recurses."""
+    """While the API process runs it owns the dog's single WebRTC slot, so any other process sends dog tools to it (and
+    walk_path, so the remote's map can follow the walk). Returns None when no API is up (then this process does the work
+    itself). The API process itself never recurses."""
     import os
     if os.environ.get("WTDD_API_PROCESS"):
         return None
     import requests
     port = os.environ.get("WTDD_API_PORT", "7788")
     try:
-        r = requests.post(f"http://127.0.0.1:{port}/tools/{tool}", json=args, timeout=120)
+        r = requests.post(f"http://127.0.0.1:{port}/tools/{tool}", json=args, timeout=600)
     except requests.exceptions.ConnectionError:
         return None
     out = r.json()
     if not out.get("ok"):
-        raise RuntimeError(out.get("error", f"{tool} failed via the API"))
+        err = out.get("error") or f"{tool} failed via the API"
+        raise RuntimeError(err.split(": ", 1)[1] if err.split(": ", 1)[0].endswith("Error") else err)   # the API already names the class once
     return out["result"]
 
 

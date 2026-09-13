@@ -32,6 +32,7 @@
   .room { fill: none; stroke: none; } .room.here { fill: rgba(11,13,196,.05); }
   .path { fill: none; stroke: rgba(38,35,35,.55); stroke-width: 3; stroke-dasharray: 6 8; }
   .pt { fill: #fff; stroke: rgba(38,35,35,.6); stroke-width: 2; cursor: grab; }
+  .pt.stop { fill: var(--live, #0b0dc4); stroke: #fff; stroke-width: 3; }
   .dot { fill: var(--live, #0b0dc4); } .dot-halo { fill: var(--live, #0b0dc4); opacity: .18; } .field { fill: rgba(11,13,196,.04); stroke: var(--live, #0b0dc4); stroke-opacity: .35; stroke-dasharray: 4 6; }
   .lamp { stroke: #262323; stroke-width: 3; cursor: grab; } .lamp-glow { fill: #ffcc44; }
   .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; } .strip-glow { stroke: #ffcc44; stroke-width: 24; stroke-linecap: round; }
@@ -55,23 +56,12 @@ import htm from "https://esm.sh/htm@3";
 const html = htm.bind(React.createElement);
 
 // ---------- server (wtdd/api.py) and geometry
+const API = "";   // same origin (wtdd/api.py serves this page)
 const post = (path, obj) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 const call = async (name, args = {}) => (await post(`/tools/${name}`, args)).json();
 const putMap = m => post("/map", m);   // rewrites ui/map.json; walk_path reads it
 const inside = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
-const d2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-const roomOf = (p, rooms) => (rooms || []).find(r => inside(p, r.poly))?.name || null;
-
-// score(light) in 0..1: the same field as wtdd/field.py (lamp point, strip sampled along its line, other rooms scaled). Display only.
-function score(L, p, ent, here) {
-  const R = ent.radius_px, k = ent.falloff || 1;
-  const w = q => Math.pow(Math.max(0, 1 - d2(p, q) / R), k);
-  let s;
-  if (L.kind === "line") { const n = ent.samples || 12, [a, b] = L.pts; let acc = 0; for (let i = 0; i <= n; i++) acc += w([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]); s = acc / (n + 1); }
-  else s = w(L.pts[0]);
-  if (here && L.room && L.room !== here) s *= ent.other_room_factor ?? 0.3;
-  return s;
-}
+// the dot, the room and the levels come from GET /field (wtdd/field.py CURRENT) while a walk runs, whoever started it.
 
 function App() {
   const [map, setMap] = useState(null);
@@ -85,6 +75,7 @@ function App() {
   const [dot, setDot] = useState(null);
   const [here, setHere] = useState(null);
   const [levels, setLevels] = useState({});
+  const [stopAt, setStopAt] = useState(null);
   const [pct, setPct] = useState(20);
   const playing = useRef(false);
   const drag = useRef(null); const moved = useRef(false);
@@ -103,6 +94,9 @@ function App() {
   // is held; the server stops the dog 0.6 s after the last refresh, so a dropped key never runs it into a wall.
   const [dog, setDog] = useState(null);
   const [photo, setPhoto] = useState(null);
+  const [live, setLive] = useState(null);   // the dog's camera: GET /dog/frame.jpg, self-paced, only while connected
+  const next = ms => setTimeout(() => setLive(`${API}/dog/frame.jpg?t=${Date.now()}`), ms);
+  useEffect(() => { if (dog?.connected && !live) next(0); if (dog && !dog.connected && live) setLive(null); }, [dog]);
   const keys = useRef(new Set()); const driveTimer = useRef(null);
   const VEL = { w: [0.3, 0, 0], s: [-0.3, 0, 0], a: [0, 0.3, 0], d: [0, -0.3, 0], q: [0, 0, 0.5], e: [0, 0, -0.5] };
   const post = (path, body) => fetch(`${API}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -119,34 +113,19 @@ function App() {
   const lookShot = async kind => { const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, file: out.result.file, pitch: out.result.pitch_deg, kind }); };
   const key = (k, label) => html`<button class="small" onPointerDown=${() => press(k)} onPointerUp=${() => release(k)} onPointerLeave=${() => release(k)}>${label}</button>`;
 
-  // ---------- the run: entity along the path; real lights follow the field, throttled
+  // ---------- the run: the API walks the entity (wtdd/field.py) and drives the real lights; this page only draws GET /field
   const play = async () => {
     if (!map || playing.current || map.path.length < 2) return;
     playing.current = true;
-    const m = withRooms(map), pts = m.path, ent = m.entity, speed = ent.speed_px_s || 60;
-    await putMap(m);
-    const walking = call("walk_path");      // the real lights: one implementation (wtdd/field.py), same as the chat demo
-    const segs = []; let total = 0;
-    for (let i = 1; i < pts.length; i++) { const d = d2(pts[i], pts[i-1]); segs.push([pts[i-1], pts[i], d]); total += d; }
-    const at = s => { let acc = 0; for (const [a, b, d] of segs) { if (s <= acc + d) { const k = (s - acc) / d; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; } acc += d; } return pts[pts.length - 1]; };
-    const t0 = performance.now();
-    await new Promise(res => {
-      const step = () => {
-        const s = Math.min(total, (performance.now() - t0) / 1000 * speed);
-        const p = at(s), room = roomOf(p, m.rooms);
-        setDot(p); setHere(room);
-        const lv = {};
-        for (const L of m.lights) lv[L.id] = Math.round(100 * score(L, p, ent, room));   // display only; writes happen server-side
-        setLevels(lv);
-        if (s < total && playing.current) requestAnimationFrame(step); else res();
-      };
-      requestAnimationFrame(step);
-    });
+    const m = withRooms(map); setMap(m); await putMap(m);
+    const out = await call("walk_path"); setLast(out);
     playing.current = false;
-    const out = await walking; setLast(out);
-    setTimeout(() => { setDot(null); setHere(null); setLevels({}); }, 1200);
   };
-  const stop = () => { playing.current = false; };
+  const hadDot = useRef(false);
+  useEffect(() => { const t = setInterval(() => fetch("/field").then(r => r.json()).then(f => {
+    if (f.p) { hadDot.current = true; setDot(f.p); setHere(f.here); setLevels(f.levels); setStopAt(f.stop ?? null); }
+    else if (hadDot.current) { hadDot.current = false; setStopAt(null); setTimeout(() => { setDot(null); setHere(null); setLevels({}); }, 1200); }
+  }).catch(() => {}), 100); return () => clearInterval(t); }, []);
 
   // ---------- editing: path points, lamp dots, strip line; all draggable
   const onMapClick = e => {
@@ -165,6 +144,7 @@ function App() {
                              : { ...m, lights: m.lights.map((L, i) => i !== li ? L : { ...L, pts: L.pts.map((q, j) => j === pi ? p : q) }) });
   };
   const onUp = () => { drag.current = null; };
+  const toggleStop = i => setMap(m => { const st = new Set(m.stops || []); st.has(i) ? st.delete(i) : st.add(i); return { ...m, stops: [...st].sort((a, b) => a - b) }; });
   const blink = L => run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 });
   const identify = L => { if (!moved.current) blink(L); };
   const relabel = L => { const label = prompt(`label for ${L.name}`, L.label || L.name); if (label != null) setMap(m => ({ ...m, lights: m.lights.map(x => x.id === L.id ? { ...x, label } : x) })); };
@@ -183,18 +163,19 @@ function App() {
           <h2>the castle · first floor</h2>
           <div class="row">
             <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2}>▶ walk the path</button>
-            <button onClick=${stop}>stop</button>
             <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
-            ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [] })}>clear path</button>`}
+            ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
             <button class="key" onClick=${saveMap}>save</button>
-            <span class="mono">${here ? `in: ${here}` : map ? `${map.path.length} path pts · ${(map.lights || []).length} lights` : "loading"}</span>
+            <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust" : "drag a lamp, a strip end, or a path point · click a light to blink the real one · double-click to relabel · save"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : "drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · double-click a light to relabel · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
             ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
-            ${map.path.map((p, i) => html`<circle key=${"p" + i} class="pt" cx=${p[0]} cy=${p[1]} r="7" onPointerDown=${onDown("path", i, 0)} onClick=${e => e.stopPropagation()}/>`)}
+            ${map.path.map((p, i) => { const st = (map.stops || []).includes(i); return html`<g key=${"p" + i}>
+              <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${onDown("path", i, 0)} onClick=${e => e.stopPropagation()} onDoubleClick=${e => { e.stopPropagation(); toggleStop(i); }}/>
+              ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}</text>`}</g>`; })}
             ${(map.lights || []).map((L, li) => {
               const lv = levels[L.id] || 0;
               if (L.kind === "line") return html`<g key=${L.id}>
@@ -221,8 +202,10 @@ function App() {
           <div class="row tight">${key("q", "Q turn ◀")}${key("w", "W ▲")}${key("e", "E turn ▶")}<span class="mono">hold a key or a button · 0.3 m/s · 0.5 rad/s</span></div>
           <div class="row tight">${key("a", "A ◀")}${key("s", "S ▼")}${key("d", "D ▶")}<button class="small" onClick=${() => post("/dog/stop")}>stop</button></div>
           <div class="row"><button class="key" disabled=${busy !== null} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button><button disabled=${busy !== null} onClick=${() => lookShot("level")}>level photo</button><button disabled=${busy !== null} onClick=${() => lookShot("sit")}>sit photo</button>
-            ${cmd("sit", "dog_cmd", { name: "Sit" })}${cmd("stand", "dog_cmd", { name: "RiseSit" })}${cmd("hello", "dog_cmd", { name: "Hello" })}</div>
-          <div class="cmd">${cli("dog_look", { look: "tilt" })}</div>
+            ${cmd("sit", "dog_cmd", { name: "Sit" })}${cmd("stand", "dog_cmd", { name: "RiseSit" })}${cmd("hello", "dog_cmd", { name: "Hello" })}
+            ${cmd("nod + say to castle", "dog_say", {}, { key: true, title: "nod, photo, one sentence from the vision model, posted with the photo" })}</div>
+          <div class="cmd">${cli("dog_say", {})}</div>
+          ${live && html`<img src=${live} onLoad=${() => next(150)} onError=${() => next(2000)} style=${{ width: "100%", borderRadius: 10, display: "block", marginBottom: 6 }}/>`}
           ${photo && html`<div><img src=${photo.url} style=${{ width: "100%", borderRadius: 10, display: "block" }}/><div class="row"><span class="mono">${photo.kind} · pitch ${photo.pitch}°</span>${cmd("send to castle", "chat_post", { text: "dog's eye view", file: photo.file })}</div></div>`}
         </div>
         <div class="panel">
@@ -253,7 +236,7 @@ function App() {
           <h2>commands · demo</h2>
           <div class="row">${cmd("the show (25 s)", "light_show", {})}${cmd("red / blue on 'special' 5 s", "hue_signal", { light: "special", seconds: 5 })}${cmd("make the fire picture", "dog_on_fire", {})}${cmd("read every light", "lights_status", {})}</div>
           <div class="cmd">${cli("light_show", {})}</div>
-          ${last && html`<div class="mono" style=${{ marginTop: 6 }}>${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || last.result.file || JSON.stringify(last.result).slice(0, 140))) : last.error}</div>`}
+          ${last && html`<div class="mono" style=${{ marginTop: 6 }}>${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.text || last.result.result || last.result.file || JSON.stringify(last.result).slice(0, 140))) : last.error}</div>`}
         </div>
         ${status && html`<div class="panel"><h2>state · read back</h2><div class="status">
           ${status.hue.filter(l => l.room === "Living room").map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}

@@ -7,8 +7,9 @@ much of it sits inside that radius, weighted toward the centre. One implementati
   lamp:   score = (1 - d/R) ** falloff at the lamp's point
   strip:  the mean of that over `samples` points along its line (a graze at the edge is dim, a pass over the middle bright)
   rooms:  score *= other_room_factor when the light's room (the polygon its point sits in) is not the entity's room
-Map keys read: path (at least 2 points), entity {radius_px 220, speed_px_s 60, falloff 1.6, other_room_factor 0.3,
-samples 12, min_step 4, floor 6}, lights [{id, label, kind dot|line, pts, device hue|strip}], rooms [{name, poly}].
+Map keys read: path (at least 2 points), stops [path indices], entity {radius_px 220, speed_px_s 60, falloff 1.6,
+other_room_factor 0.3, samples 12, min_step 4, floor 6}, lights [{id, label, kind dot|line, pts, device hue|strip}],
+rooms [{name, poly}].
 lights[].room is recomputed here from the polygons, whatever the file says.
 Writes go through the registry (hue_light_set per lamp, strip_set for the strip): one thread per light and at most one
 write in flight per light, so each light steps exactly as fast as its own measured latency allows (the strip about 0.4 s
@@ -16,15 +17,21 @@ on the LAN, a Hue lamp through the cloud about 0.8 s), only when the level moved
 crossed zero, and is simply off below `floor`. The loop polls at HZ. Order: every light to 0 and wait for all of it (the
 room starts dark and the first latency of each light is measured), the walk in real time at speed_px_s, then every
 light to 0 again and wait. One field.walk ledger row with seconds, writes, errors, rooms crossed and the mean latency per
-light; every write is its own row, a failed write is counted and logged, never retried. Measured on the live wake demo
+light; every write is its own row, a failed write is counted and logged, never retried. While it runs, <repo>/field.json
+holds the entity's position, room, levels and current stop (atomic writes at HZ, removed at the end); the API serves it
+at GET /field and the remote draws the dot from it, whichever process runs the walk. Stops: map.json `stops` is a list
+of path point indices (double-click a path point on the remote); at each one the walk pauses and calls on_stop(index,
+point, room), the lights hold, then it resumes. The chat's wake sequence passes its look-and-say as on_stop; with no
+stops on the map it looks once at the end of the path. Measured on the live wake demo
 (2026-09-13): dark start 1.46 s, walk 63.6 s across four rooms (seven crossings, five lights), 67 writes, 0 errors.
 """
 from __future__ import annotations
 import json
 import math
 import time
+import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Callable
 
 from . import tools
 from .config import ROOT
@@ -32,6 +39,7 @@ from .ledger import log, step
 
 MAP = ROOT / "ui" / "map.json"
 HZ = 10.0
+FIELD = ROOT / "field.json"   # the running walk: p, here, levels, s, total, stop; written at HZ, removed at the end (GET /field)
 
 
 def inside(p, poly) -> bool:
@@ -78,13 +86,26 @@ def _write(light: dict[str, Any], level: int) -> float:
     return time.monotonic() - t0
 
 
-def walk(dry: bool = False) -> dict[str, Any]:
+def _publish(d: dict[str, Any] | None) -> None:
+    """The live position for the remote (GET /field): atomic file write, or removal when the walk is over."""
+    if d is None:
+        FIELD.unlink(missing_ok=True)
+        return
+    tmp = FIELD.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d))
+    os.replace(tmp, FIELD)
+
+
+def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | None], Any] | None = None) -> dict[str, Any]:
     """Runs the entity along the map's path in real time and drives the real lights (see the module doc for the order).
-    Returns seconds, dark_ms, writes, errors, rooms crossed, latency_ms per light, and the light labels."""
+    At each of the map's stops (path point indices) the entity pauses, on_stop(index, point, room) runs to completion
+    (the chat's look-and-say; the lights hold), then the walk resumes from the same spot. Returns seconds, dark_ms,
+    writes, errors, rooms crossed, stops done, latency_ms per light, and the light labels."""
     m = json.loads(MAP.read_text())
     pts, ent, lights, rooms = m["path"], m.get("entity", {}), m.get("lights", []), m.get("rooms", [])
     if len(pts) < 2:
         raise ValueError("map.json has fewer than 2 path points; draw the path on the remote and save")
+    stops = sorted({int(i) for i in m.get("stops", []) if 0 <= int(i) < len(pts)})
     for L in lights:
         (ax, ay), (bx, by) = L["pts"][0], L["pts"][-1]     # a dot's midpoint is the dot itself
         L["room"] = room_of(((ax + bx) / 2, (ay + by) / 2), rooms)
@@ -93,6 +114,9 @@ def walk(dry: bool = False) -> dict[str, Any]:
     floor = int(ent.get("floor", 6))
     segs = [(pts[i - 1], pts[i], math.dist(pts[i - 1], pts[i])) for i in range(1, len(pts))]
     total = sum(d for _, _, d in segs)
+    cum = [0.0]                                              # distance along the path to each point: when a stop is reached
+    for _, _, d in segs:
+        cum.append(cum[-1] + d)
 
     def at(s):
         acc = 0.0
@@ -118,7 +142,8 @@ def walk(dry: bool = False) -> dict[str, Any]:
             log("field", "write failed", light=lid[:8], err=f"{type(e).__name__}: {str(e)[:80]}")
 
     with step("field", "field.walk", "map", {"path_pts": len(pts), "lights": len(lights), "radius": ent.get("radius_px"),
-                                             "falloff": ent.get("falloff"), "speed": speed, "seconds": round(total / speed, 1), "dry": dry}) as r:
+                                             "falloff": ent.get("falloff"), "speed": speed, "seconds": round(total / speed, 1),
+                                             "stops": stops, "dry": dry}) as r:
         t_dark = time.monotonic()
         if not dry:                                      # dark start: everything off, and wait for it
             for lid, fut in {L["id"]: pool.submit(_write, L, 0) for L in lights}.items():
@@ -128,17 +153,22 @@ def walk(dry: bool = False) -> dict[str, Any]:
         log("field", "dark, starting", ms=dark_ms, latency={_label(L)[:12]: round(1000 * lat[L["id"]][-1]) if lat[L["id"]] else None for L in lights})
         t0 = time.monotonic()
         rooms_seen: list[str] = []
-        while True:
+        stops_done: list[int] = []
+        pending_stops = list(stops)
+        try:
+          while True:
             s = min(total, (time.monotonic() - t0) * speed)
             p = at(s)
             here = room_of(p, rooms)
             if here and (not rooms_seen or rooms_seen[-1] != here):
                 rooms_seen.append(here)
+            lv: dict[str, int] = {}
             for L in lights:
                 lid = L["id"]
                 level = int(round(100 * score(L, p, ent, here)))
                 if level < floor:
                     level = 0
+                lv[lid] = level
                 fut = inflight.get(lid)
                 if fut is not None:
                     if not fut.done():
@@ -151,9 +181,23 @@ def walk(dry: bool = False) -> dict[str, Any]:
                     log("field", f"{_label(L)[:18]} -> {level}%", room=here or "-", x=int(p[0]), y=int(p[1]))
                     if not dry:
                         inflight[lid] = pool.submit(_write, L, level)
+            live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None}
+            if pending_stops and s >= cum[pending_stops[0]]:
+                i = pending_stops.pop(0)
+                _publish({**live, "stop": i})
+                log("field", f"stop {i}: pausing", room=here or "-", x=int(p[0]), y=int(p[1]))
+                t_pause = time.monotonic()
+                if on_stop is not None:
+                    on_stop(i, p, here)
+                t0 += time.monotonic() - t_pause                 # resume from the same spot
+                stops_done.append(i)
+                log("field", f"stop {i}: resuming", paused_s=round(time.monotonic() - t_pause, 1))
+            _publish(live)
             if s >= total:
                 break
             time.sleep(1 / HZ)
+        finally:
+          _publish(None)
         for lid, fut in list(inflight.items()):
             settle(fut, lid)
         for L in lights:                                 # ends dark, and wait for it
@@ -165,6 +209,6 @@ def walk(dry: bool = False) -> dict[str, Any]:
         pool.shutdown(wait=True)
         latency = {_label(L): round(1000 * sum(lat[L["id"]]) / len(lat[L["id"]])) if lat[L["id"]] else None for L in lights}
         out = {"seconds": round(time.monotonic() - t0, 1), "dark_ms": dark_ms, "writes": writes, "errors": errors,
-               "rooms": rooms_seen, "latency_ms": latency, "lights": [_label(L) for L in lights]}
+               "rooms": rooms_seen, "stops": stops_done, "latency_ms": latency, "lights": [_label(L) for L in lights]}
         r["state_after"] = out
         return out

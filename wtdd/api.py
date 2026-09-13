@@ -6,12 +6,15 @@
   GET  /tools                     [{name, doc, args}] for every tool
   POST /tools/<name>  {args}      {ok, tool, args, result}, or 500 {ok: false, tool, args, error}
   GET  /ledger?n=25               the last n ledger rows (the page polls this every 2 s)
+  GET  /field                     the running walk's position, room, levels and stop from <repo>/field.json, {} when idle (polled at 10 Hz)
+  GET  /dog/state                 the shared dog session's state; POST /dog/drive {x,y,z} and /dog/stop for hold-to-drive
+  GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
   POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
 Every tool call is already its own ledger row; the API adds one stderr log line per request and nothing else.
 CORS headers (and OPTIONS) are sent so the page also works when opened from another origin; today it is same-origin.
 The ui/index.html buttons are these tools: lights_status, identify, walk_path, lights_on, lights_off, lights_dim,
-strip_temp, strip_fade, strip_set, light_show, hue_signal, dog_on_fire.
+strip_temp, strip_fade, strip_set, light_show, hue_signal, dog_on_fire, dog_look, dog_say, dog_cmd, chat_post.
 """
 from __future__ import annotations
 import json
@@ -23,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import tools
 from .config import ROOT
-from .field import MAP
+from .field import FIELD, MAP
 from pathlib import Path
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
@@ -63,9 +66,17 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, json.loads(MAP.read_text()))
         if u.path == "/ledger":
             return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
+        if u.path == "/field":
+            return self._json(200, json.loads(FIELD.read_text()) if FIELD.exists() else {})
         if u.path == "/dog/state":
             from .dog.session import DogSession
             return self._json(200, DogSession.get().state())
+        if u.path == "/dog/frame.jpg":
+            from .dog.session import DogSession
+            try:
+                return self._send(200, "image/jpeg", DogSession.get().snapshot())
+            except Exception as e:  # noqa: BLE001  (no dog, or stale video: reported, the page shows nothing)
+                return self._json(503, {"error": f"{type(e).__name__}: {e}"})
         if u.path.startswith("/pictures/"):
             name = u.path[len("/pictures/"):]
             f = PICTURES / name

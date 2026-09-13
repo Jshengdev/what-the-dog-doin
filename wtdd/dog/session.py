@@ -3,7 +3,9 @@
 The dog accepts one peer at a time and keeps the slot for about ten seconds after a close, so connecting per command is
 slow and collides. This module holds a single Body on a background asyncio loop; synchronous callers (tools, HTTP
 handlers) submit coroutines with run(). The API process owns the dog while it runs (WTDD_API_PROCESS=1); other
-processes reach the dog through the API (wtdd/commands.py) so two peers never fight for the slot.
+processes reach the dog through the API (wtdd/commands.py) so two peers never fight for the slot. If the 20 Hz state
+stream goes quiet for STALE_MS (the dog was power-cycled or left its hotspot) the next call closes the dead peer and
+connects once more, logged; there is no reconnect loop.
 
 drive() is hold-to-move: the remote refreshes a velocity every 200 ms while a key is down; the loop republishes it at
 MOVE_HZ and sends StopMove 0.6 s after the last refresh or on stop(). Speeds are capped at DRIVE_MAX.
@@ -14,7 +16,8 @@ The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-
          0.36 s to 0.79 s), frame at 0.6 s, Euler 0, Pose off. The pose is a nod, not a hold, and only fires as this
          down-then-up pair: a single cold Euler does nothing and re-sending it every 2 s does nothing.
   sit:   Sit, 1.8 s, frame at 48 deg up, RiseSit.
-Frames land in ~/Pictures/wtdd/look-<kind>.jpg (the API serves them at /pictures/<name>).
+Frames land in ~/Pictures/wtdd/look-<kind>.jpg (the API serves them at /pictures/<name>). snapshot() is the
+un-receipted newest frame behind GET /dog/frame.jpg, the remote's live view at a few frames per second.
 """
 from __future__ import annotations
 import asyncio
@@ -32,6 +35,7 @@ DRIVE_MAX = {"x": 0.4, "y": 0.4, "z": 0.6}   # m/s, m/s, rad/s for the hand-driv
 DRIVE_HOLD_S = 0.6                            # a velocity older than this is a released key
 LOOKS = ("level", "tilt", "sit")
 TILT_MIN_DEG = 8.0                            # a tilt frame counts only if the IMU shows at least this much nose-up
+STALE_MS = 5000                               # state stream (20 Hz) older than this: the peer is dead, reconnect once
 
 
 class DogSession:
@@ -59,6 +63,17 @@ class DogSession:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
     async def _ensure(self) -> Body:
+        if self.body is not None:
+            st = self.body.state()
+            if st and st["age_ms"] > STALE_MS:   # the peer is gone (power cycle, hotspot drop): one logged reconnect, no loop
+                log("dog", "WARN session stale, reconnecting once", age_ms=st["age_ms"], state_n=st["n"])
+                if self._driver:
+                    self._driver.cancel()
+                try:
+                    await asyncio.wait_for(self.body.close(), 5)
+                except Exception as e:  # noqa: BLE001  (the old peer is already dead; a failed close is logged, then replaced)
+                    log("dog", "old session close failed", err=f"{type(e).__name__}: {str(e)[:80]}")
+                self.body = None
         if self.body is None:
             b = Body()
             await b.connect()
@@ -84,6 +99,10 @@ class DogSession:
     # ---- commands
     def cmd(self, name: str, parameter: Any = None) -> int:
         return self.run(self.with_body(lambda b: b.cmd(name, parameter)))
+
+    def snapshot(self) -> bytes:
+        """The newest camera frame as JPEG, no ledger row (the remote's live view)."""
+        return self.run(self.with_body(lambda b: b.jpeg()))[0]
 
     # ---- hold-to-move
     def drive(self, x: float = 0.0, y: float = 0.0, z: float = 0.0) -> dict[str, Any]:
