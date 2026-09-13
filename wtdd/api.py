@@ -19,7 +19,8 @@
                                   connected); POST /dog/lidar {on} switches the voxel stream on/off (wtdd/dog/lidar.py)
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
-  POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
+  POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk);
+                                  the previous file is kept as ui/map.prev.json (same for a recorded route)
 Every tool call is already its own ledger row; the API adds one stderr log line per request and nothing else.
 CORS headers (and OPTIONS) are sent so the page also works when opened from another origin; today it is same-origin.
 The ui/index.html buttons are these tools: lights_status, identify, walk_path, lights_on, lights_off, lights_dim,
@@ -119,6 +120,8 @@ class H(BaseHTTPRequestHandler):
             if problems and data.get("path"):   # an unrunnable path is refused, with the points named; the page keeps the edit
                 log("api", "map NOT saved", problems=len(problems))
                 return self._json(400, {"ok": False, "error": "not saved: " + "; ".join(problems)})
+            if MAP.exists():
+                MAP.with_name("map.prev.json").write_text(MAP.read_text())   # the previous route survives one overwrite
             MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), stops=len(data.get("stops", [])))
             return self._json(200, {"ok": True})
@@ -152,6 +155,9 @@ class H(BaseHTTPRequestHandler):
                     rec = s.record(bool(body.get("on", True)))
                     if not rec["active"]:             # written even with problems (the drive is not lost); they are returned and shown
                         m = json.loads(MAP.read_text())
+                        MAP.with_name("map.prev.json").write_text(json.dumps(m, indent=2) + "\n")   # the previous route survives one overwrite
+                        if len(rec["path"]) < 2:
+                            raise ValueError(f"recording too short to be a route ({len(rec['path'])} point); the map was not changed")
                         m["path"], m["stops"] = rec["path"], rec["stops"]
                         MAP.write_text(json.dumps(m, indent=2) + "\n")
                         rec["problems"] = check_path(rec["path"], m.get("rooms", []))
