@@ -15,7 +15,7 @@ LOOK = Path("~/Pictures/wtdd/look.jpg").expanduser()
 
 def _bridge():
     from .hue.api import HueBridge
-    return HueBridge(config.get("HUE_BRIDGE_IP"), config.get("HUE_APP_KEY"))
+    return HueBridge.from_env()
 
 
 def lights(on: bool) -> str:

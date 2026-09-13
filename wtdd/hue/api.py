@@ -70,20 +70,39 @@ def summary(light: dict[str, Any]) -> dict[str, Any]:
             "signal": light.get("signaling", {}).get("status", {}).get("signal")}
 
 
+REMOTE_BASE = "https://api.meethue.com/route"
+OAUTH = "https://api.meethue.com/v2/oauth2"
+
+
 class HueBridge:
     _warned = False
 
-    def __init__(self, ip: str, key: str | None = None, timeout: float = 5.0):
+    def __init__(self, ip: str, key: str | None = None, timeout: float = 5.0, remote_token: str | None = None):
+        """Local: https://<ip> with a self-signed cert. Remote: Hue's cloud route with an OAuth bearer token; same paths,
+        same app key header, slower round trips, works from any network."""
         self.ip, self.key, self.timeout = ip, key, timeout
-        self.base = f"https://{ip}"
+        self.remote = bool(remote_token)
         self.s = requests.Session()
+        self._last_put: dict[str, float] = {}
+        if self.remote:
+            self.base = REMOTE_BASE
+            self.s.headers["Authorization"] = f"Bearer {remote_token}"
+            return
+        self.base = f"https://{ip}"
         # wtdd: verify=False because the bridge cert is self-signed; LAN only. Upgrade path: pin the Hue root CA.
         self.s.verify = False
-        self._last_put: dict[str, float] = {}
         if not HueBridge._warned:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             ledger.log(AGENT, "TLS verify=False: bridge cert is self-signed (LAN only)", ip=ip)
             HueBridge._warned = True
+
+    @classmethod
+    def from_env(cls, key_required: bool = True) -> "HueBridge":
+        """Remote when HUE_REMOTE_TOKEN is set, else local via HUE_BRIDGE_IP."""
+        from .. import config
+        key = config.get("HUE_APP_KEY") if key_required else config.maybe("HUE_APP_KEY")
+        token = config.maybe("HUE_REMOTE_TOKEN")
+        return cls(config.maybe("HUE_BRIDGE_IP") or "api.meethue.com", key, remote_token=token)
 
     # one HTTP call; maps bad key, rate limit, and connection failures to HueError; never retries
     def _req(self, method: str, path: str, body: Any = None, auth: bool = True) -> Any:
@@ -93,7 +112,7 @@ class HueBridge:
         try:
             resp = self.s.request(method, self.base + path, json=body, headers=headers, timeout=self.timeout)
         except requests.exceptions.RequestException as e:
-            raise HueError(f"unreachable {self.ip}: {type(e).__name__}: {str(e)[:120]}") from e
+            raise HueError(f"unreachable {self.base if self.remote else self.ip}: {type(e).__name__}: {str(e)[:120]}") from e
         text = resp.text[:2000]
         if resp.status_code in (401, 403):
             raise HueError(f"bad key (HTTP {resp.status_code}): {text}", resp.status_code)
@@ -126,6 +145,8 @@ class HueBridge:
         """One POST /api attempt. Returns the username (the app key); raises HueError('link button not pressed')
         when the button has not been pressed. The caller polls. The key is never logged."""
         with ledger.step(AGENT, "lights.pair", APP, {"devicetype": devicetype}) as r:
+            if self.remote:
+                self._req("PUT", "/api/0/config", {"linkbutton": True}, auth=False)   # the cloud "link button"
             out = self._req("POST", "/api", {"devicetype": devicetype, "generateclientkey": True}, auth=False)
             first = out[0] if isinstance(out, list) and out else {}
             if "error" in first:
