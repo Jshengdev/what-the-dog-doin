@@ -290,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     try:
+        if hasattr(a, "fn"):            # remote-auth, remote-refresh
+            return a.fn(a)
         if a.cmd == "probe":
             return 0 if probe(config.maybe("HUE_BRIDGE_IP"), config.maybe("HUE_APP_KEY")) else 1
         b = bridge()
