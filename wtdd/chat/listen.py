@@ -29,7 +29,13 @@ class Listener:
 
     def allowed(self, m: dict[str, Any]) -> bool:
         if m["is_from_me"]:
-            return False
+            # WTDD_ALLOW_SELF=1 lets Johnny trigger from his own phone (same account as the dog). The dog's own posts are
+            # still refused: by confirmed guid, and by the shape of its replies, so it can never wake itself.
+            if config.maybe("WTDD_ALLOW_SELF") in (None, "0", "false", "no"):
+                return False
+            text = (m.get("text") or "").lower()
+            own = m["guid"] in memory.posted_guids() or text.startswith(("the dog is doin", "on it:", "couldn't", "ok, done listening", "lights played", "living room lights", "this is fine", "did:", "listening for"))
+            return not own
         if not HOUSEMATES:
             if not self._warned:
                 log("chat", "WARN HOUSEMATES is empty: any member of the group may wake the dog")

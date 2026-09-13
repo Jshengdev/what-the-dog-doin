@@ -136,3 +136,9 @@ def context(chat_guid: str, n: int = 20) -> str:
         f"report={json.dumps(report, default=str)}\npost={json.dumps(dict(post), default=str) if post else None}",
         "## state\n" + state,
     ])
+
+
+def posted_guids() -> set[str]:
+    """Message guids the dog itself posted (confirmed), so its own words are never mistaken for a housemate's."""
+    with connect() as c:
+        return {r[0] for r in c.execute("SELECT posted_guid FROM posts WHERE posted_guid IS NOT NULL")}
