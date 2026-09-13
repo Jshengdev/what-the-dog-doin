@@ -53,6 +53,7 @@ class DogSession:
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, name="dog-session", daemon=True).start()
         self.body: Body | None = None
+        self._connecting = asyncio.Lock()   # one connect at a time: the dog takes one peer (a frame pull and a look can race)
         self.vel = (0.0, 0.0, 0.0)
         self.vel_t = 0.0
         self.moving = False
@@ -63,6 +64,7 @@ class DogSession:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
     async def _ensure(self) -> Body:
+      async with self._connecting:
         if self.body is not None:
             st = self.body.state()
             if st and st["age_ms"] > STALE_MS:   # the peer is gone (power cycle, hotspot drop): one logged reconnect, no loop

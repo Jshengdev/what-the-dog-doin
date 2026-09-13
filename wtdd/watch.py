@@ -1,8 +1,9 @@
 """The eye's second opinion: an open-source detector (ultralytics YOLO11n, COCO's 80 classes, Apache-2.0 weights) in
 its own process over the dog's live frames. It pulls GET /dog/frame.jpg from the API at --hz, draws the boxes into
 ~/Pictures/wtdd/watch.jpg (the API serves it at /pictures/watch.jpg) and writes the counts and boxes to <repo>/watch.json
-(GET /watch); the remote shows both. One watch.detect ledger row whenever the set of classes in view changes (a cup
-appears, a person walks in); frames themselves are not rows.
+(GET /watch); the remote shows both. One watch.detect ledger row whenever the set of classes in view changes and the
+change holds for HOLD frames (a cup appears, a person walks in; a one-frame flicker is not an event); frames themselves
+are not rows.
 
   python -m wtdd.watch                              live from the API, 4 frames a second
   python -m wtdd.watch --source ~/Pictures/wtdd/dog-live.jpg --once     one file, prints the detections
@@ -27,6 +28,7 @@ WATCH = ROOT / "watch.json"
 OUT = Path("~/Pictures/wtdd/watch.jpg").expanduser()
 MODEL = "yolo11n.pt"
 CONF = 0.35
+HOLD = 3                     # a change in the set of classes must hold for this many frames before it is a row (no flicker rows)
 API = "http://127.0.0.1:7788"
 
 
@@ -73,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     log("watch", f"model {MODEL} loaded", ms=round((time.perf_counter() - t0) * 1000), conf=CONF, source=a.source)
     is_url = a.source.startswith("http")
     last: set[str] | None = None
+    candidate: set[str] | None = None
+    held = 0
     n = warned = 0
     while True:
         try:
@@ -89,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
             n += 1
             warned = 0
             now = set(d["classes"])
-            if now != last:
+            if now == candidate:
+                held += 1
+            else:
+                candidate, held = now, 1
+            if now != last and held >= HOLD:
                 append({"step": "watch.detect", "agent": "watch", "tool": "watch.detect", "app": "yolo", "ok": True,
                         "args": {"source": a.source, "model": MODEL, "conf": CONF},
                         "state_before": sorted(last) if last is not None else None,
