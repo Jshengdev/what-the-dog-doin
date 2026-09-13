@@ -80,8 +80,10 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, {**json.loads(MAP.read_text()), "_version": int(MAP.stat().st_mtime)})   # the page sends it back on save
         if u.path == "/ledger":
             return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
-        if u.path == "/field":
-            return self._json(200, json.loads(FIELD.read_text()) if FIELD.exists() else {})
+        if u.path == "/field":   # a walk writes it at 10 Hz; older than BUSY_S it is a leftover of a killed process, not a walk
+            from .field import BUSY_S
+            live = FIELD.exists() and time.time() - FIELD.stat().st_mtime < BUSY_S
+            return self._json(200, json.loads(FIELD.read_text()) if live else {})
         if u.path == "/chat":   # the listener's heartbeat (<repo>/listen.json) plus the gated group's name
             f = ROOT / "listen.json"
             d = json.loads(f.read_text()) if f.exists() else {}
