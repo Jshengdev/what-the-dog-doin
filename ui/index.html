@@ -159,6 +159,7 @@ function App() {
     if (d && (d.kind === "dog" || d.kind === "cone")) setDogDrag(o => { if (o) post("/dog/calibrate", { p: o.p, heading_deg: o.heading_deg }).then(r => r.json()).then(setLast); return o; });
   };
   const toggleStop = i => setMap(m => { const st = new Set(m.stops || []); st.has(i) ? st.delete(i) : st.add(i); return { ...m, stops: [...st].sort((a, b) => a - b) }; });
+  const deletePoint = i => setMap(m => ({ ...m, path: m.path.filter((_, j) => j !== i), stops: (m.stops || []).filter(j => j !== i).map(j => j > i ? j - 1 : j) }));   // in draw mode: click a point to remove it
   const blink = L => run("identify", { light: L.device === "strip" ? "strip" : L.id, seconds: 3 });
   const identify = L => { if (!moved.current) blink(L); };
   const relabel = L => { const label = prompt(`label for ${L.name}`, L.label || L.name); if (label != null) setMap(m => ({ ...m, lights: m.lights.map(x => x.id === L.id ? { ...x, label } : x) })); };
@@ -183,13 +184,13 @@ function App() {
             <button class="key" onClick=${saveMap}>save</button>
             <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click the floor to add a point at the end · click an existing point to DELETE it · leave draw mode to drag points or double-click them into stops" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
             ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
             ${map.path.map((p, i) => { const st = (map.stops || []).includes(i); return html`<g key=${"p" + i}>
-              <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${onDown("path", i, 0)} onClick=${e => e.stopPropagation()} onDoubleClick=${e => { e.stopPropagation(); toggleStop(i); }}/>
+              <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${mode === "path" ? (e => e.stopPropagation()) : onDown("path", i, 0)} onClick=${e => { e.stopPropagation(); if (mode === "path") deletePoint(i); }} onDoubleClick=${e => { e.stopPropagation(); if (mode !== "path") toggleStop(i); }}/>
               ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}</text>`}</g>`; })}
             ${(map.lights || []).map((L, li) => {
               const lv = levels[L.id] || 0;
