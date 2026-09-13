@@ -137,7 +137,7 @@ Hardware in a real house: run the job, read what it wrote down, try to break it.
 
 ### Receipts
 
- `ledger.jsonl`: one append-only row per step from every process, with the device state before and after, the raw response or the error, and the latency. A step counts as done only when the device said so. The ledger stays private (it holds the housemates' ids); `docs/evidence/` has the trials as run and sanitized samples.
+`ledger.jsonl`: one append-only row per step from every process, with the device state before and after, the raw response or the error, and the latency. A step counts as done only when the device said so. The ledger stays private (it holds the housemates' ids); `docs/evidence/` has the trials as run and sanitized samples.
 
 ### Observability
 
