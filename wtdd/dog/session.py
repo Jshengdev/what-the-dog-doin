@@ -10,6 +10,11 @@ connects once more, logged; there is no reconnect loop.
 drive() is hold-to-move: the remote refreshes a velocity every 200 ms while a key is down; the loop republishes it at
 MOVE_HZ and sends StopMove 0.6 s after the last refresh or on stop(). Speeds are capped at DRIVE_MAX.
 
+Where it thinks it is: calibrate(p, heading) ties the odometry pose now to a map point (wtdd/dog/nav.py); state() then
+carries "map": {p, heading_deg}. follow(path, stops) is a task that feeds nav.steer velocities into the same drive loop,
+waypoint by waypoint, pausing at the map's stops until resume(); stop() cancels it. One dog.calibrate and one dog.follow
+row; a failed or cancelled follow says so in state().follow.error.
+
 The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-13:
   level: BalanceStand, frame.
   tilt:  BalanceStand, Pose on, Euler y=+0.3 (nose down, +15 deg at 0.7 s), 1.6 s, Euler y=-0.3 (nose up, -15 deg from
@@ -28,6 +33,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from ..ledger import log, step
+from . import nav
 from .body import MOVE_HZ, Body
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
@@ -36,6 +42,8 @@ DRIVE_HOLD_S = 0.6                            # a velocity older than this is a 
 LOOKS = ("level", "tilt", "sit")
 TILT_MIN_DEG = 8.0                            # a tilt frame counts only if the IMU shows at least this much nose-up
 STALE_MS = 5000                               # state stream (20 Hz) older than this: the peer is dead, reconnect once
+WP_TIMEOUT_S = 30.0                           # a waypoint not reached in this long fails the follow (no retry)
+STOP_TIMEOUT_S = 180.0                        # a stop without resume for this long fails the follow
 
 
 class DogSession:
@@ -58,6 +66,9 @@ class DogSession:
         self.vel_t = 0.0
         self.moving = False
         self._driver: asyncio.Task | None = None
+        self.cal: dict[str, Any] | None = None       # odometry <-> map tie (nav.calibration); None until "the dog is here"
+        self.follow_state: dict[str, Any] = {}       # the follower's live status (GET /dog/state .follow)
+        self._follower: asyncio.Task | None = None
 
     # ---- plumbing
     def run(self, coro: Awaitable[Any], timeout: float = 120.0) -> Any:
@@ -91,7 +102,95 @@ class DogSession:
 
     def state(self) -> dict[str, Any]:
         st = self.body.state() if self.body else None
-        return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st}
+        return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st,
+                "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state}
+
+    # ---- where it thinks it is (wtdd/dog/nav.py)
+    def map_pose(self, st: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        st = st if st is not None else (self.body.state() if self.body else None)
+        if not self.cal or not st or not st.get("position") or not st.get("rpy"):
+            return None
+        px, py, h = nav.to_map(self.cal, st["position"], st["rpy"][2])
+        return {"p": [round(px), round(py)], "heading_deg": round(math.degrees(h), 1)}
+
+    def calibrate(self, p, heading: float) -> dict[str, Any]:
+        """Ties the odometry pose right now to map point p facing `heading` (radians). One dog.calibrate row."""
+        st = self.run(self.with_body(lambda b: b.fresh_state(required=True)))
+        with step("dog", "dog.calibrate", "map", {"p": list(p), "heading_deg": round(math.degrees(heading), 1)}, self.map_pose(st)) as r:
+            self.cal = nav.calibration(st["position"], st["rpy"][2], p, heading)
+            r["state_after"] = {"cal": self.cal, "map": self.map_pose(st)}
+        log("dog", "calibrated", p=list(p), heading_deg=round(math.degrees(heading), 1))
+        return self.map_pose(st)
+
+    # ---- following the drawn path
+    def follow(self, path: list, stops: list[int], reach_px: float = 30.0, from_nearest: bool = True) -> dict[str, Any]:
+        if self.cal is None:
+            raise RuntimeError("not calibrated: tell the dog where it is first (POST /dog/calibrate)")
+        if self._follower and not self._follower.done():
+            raise RuntimeError("already following; POST /dog/stop first")
+        if len(path) < 2:
+            raise ValueError("the map path has fewer than 2 points")
+        self.run(self._ensure())
+        pose = self.map_pose()
+        start = nav.nearest_index(path, pose["p"]) if from_nearest else 0
+        self.follow_state = {"active": True, "i": start, "n": len(path), "stops": stops, "stopped_at": None, "resume": False,
+                             "reached": [], "started": time.time(), "error": None}
+        self._follower = asyncio.run_coroutine_threadsafe(self._follow(path, stops, reach_px, start), self.loop)
+        return dict(self.follow_state)
+
+    def resume(self) -> dict[str, Any]:
+        self.follow_state["resume"] = True
+        return dict(self.follow_state)
+
+    def _set_vel(self, x: float, y: float, z: float) -> None:
+        self.vel, self.vel_t = (x, y, z), time.monotonic()   # the drive loop publishes it and stops 0.6 s after the last refresh
+
+    async def _follow(self, path: list, stops: list[int], reach_px: float, start: int) -> None:
+        """Waypoint by waypoint from `start`: nav.steer at 10 Hz feeding the drive loop; pauses at stops until resume().
+        One dog.follow row at the end with the waypoints reached and the error, if any. Never retries a waypoint."""
+        fs = self.follow_state
+        args = {"n": len(path), "start": start, "stops": stops, "reach_px": reach_px}
+        try:
+            with step("dog", "dog.follow", "map", args, self.map_pose()) as r:
+                try:
+                    for i in range(start, len(path)):
+                        fs["i"] = i
+                        t_wp = time.monotonic()
+                        while True:
+                            pose = self.map_pose()
+                            if pose is None:
+                                raise RuntimeError("no pose (state stream stopped)")
+                            ctl = nav.steer(pose["p"][0], pose["p"][1], math.radians(pose["heading_deg"]), path[i], reach_px)
+                            fs.update({"dist_px": ctl["dist_px"], "err_deg": ctl["err_deg"], "p": pose["p"], "heading_deg": pose["heading_deg"]})
+                            if ctl["reached"]:
+                                break
+                            if time.monotonic() - t_wp > WP_TIMEOUT_S:
+                                raise TimeoutError(f"waypoint {i} not reached in {WP_TIMEOUT_S}s (dist {ctl['dist_px']} px, err {ctl['err_deg']} deg)")
+                            self._set_vel(ctl["x"], 0.0, ctl["z"])
+                            await asyncio.sleep(0.1)
+                        fs["reached"].append(i)
+                        log("dog", f"waypoint {i}/{len(path) - 1} reached", p=pose["p"])
+                        if i in stops:
+                            self.vel, self.vel_t = (0.0, 0.0, 0.0), 0.0
+                            fs["stopped_at"], fs["resume"] = i, False
+                            log("dog", f"stop at waypoint {i}: waiting for resume")
+                            t_stop = time.monotonic()
+                            while not fs["resume"]:
+                                if time.monotonic() - t_stop > STOP_TIMEOUT_S:
+                                    raise TimeoutError(f"stopped at {i} for {STOP_TIMEOUT_S}s without resume")
+                                await asyncio.sleep(0.2)
+                            fs["stopped_at"] = None
+                    fs["done"] = True
+                finally:
+                    self.vel, self.vel_t = (0.0, 0.0, 0.0), 0.0
+                    fs["active"] = False
+                    r["state_after"] = {"reached": list(fs["reached"]), "of": len(path), "seconds": round(time.time() - fs["started"], 1), "map": self.map_pose()}
+        except asyncio.CancelledError:
+            fs["error"] = "stopped"
+            log("dog", "follow cancelled (stop)")
+        except Exception as e:  # noqa: BLE001  (the row above has it; the state carries it for the page)
+            fs["error"] = f"{type(e).__name__}: {e}"
+            log("dog", "follow FAILED", err=fs["error"][:120])
 
     def close(self) -> None:
         if self.body is not None:
@@ -116,6 +215,8 @@ class DogSession:
         return {"vel": list(self.vel), "hold_s": DRIVE_HOLD_S}
 
     def stop(self) -> dict[str, Any]:
+        if self._follower and not self._follower.done():
+            self._follower.cancel()
         self.vel, self.vel_t = (0.0, 0.0, 0.0), 0.0
         return {"vel": [0.0, 0.0, 0.0]}
 

@@ -9,7 +9,9 @@ Run: python -m wtdd.chat listen [--dry-run] [--every 2] [--listen-s 120] [--once
 Facts. No replay at boot: the watermark starts at MAX(ROWID). WTDD_LISTEN_S (default 120) is the armed window and any
 recognized message re-arms it. Who may wake the dog: any member while HOUSEMATES is empty (one WARN), else the listed
 handles; from-me rows only with WTDD_ALLOW_SELF=1 (Johnny's phone shares the dog's account), and even then the dog's
-own posts are refused by confirmed guid and by the opening words of its replies. WTDD_WAKE_SHOW=1 makes a wake run the
+own posts are refused by confirmed guid and by the opening words of its replies. WTDD_ROUND=dog makes the round the
+real dog's: the wake starts the API's path follower (the dog must be calibrated on the remote first) and the field
+follows the dog's believed pose; unset, the entity walks the drawn path and the dog is hand-driven. WTDD_WAKE_SHOW=1 makes a wake run the
 demo in Johnny's order (dog_on_fire picture, "dog doin", the walk with a look-and-say at every stop on the map: nod,
 photo, one sentence from the vision model posted with the photo, and with WTDD_ALARM=1 the stranger alarm when a person
 is in frame, "yo, we don't know this guy" plus light_alarm; then "dog done") instead of a text ack. WTDD_AGENT=1
@@ -114,8 +116,15 @@ class Listener:
         self.say(f"doin:{m['guid']}", "dog doin")
         walked: str | None = None
         stops: list[int] = []
+        source = "dog" if (config.maybe("WTDD_ROUND") or "entity") == "dog" else "entity"
         try:
-            out = walk(on_stop=lambda i, p, here: self.look_and_say(m, i))
+            if source == "dog":   # the real dog walks the round: the API's follower drives it, the field follows its pose
+                import requests
+                r = requests.post("http://127.0.0.1:7788/dog/follow", json={}, timeout=10).json()
+                if not r.get("ok"):
+                    raise RuntimeError(f"follow refused: {r.get('error')}")
+                log("chat", "follower started", **{k: v for k, v in r["follow"].items() if k in ("i", "n", "stops")})
+            out = walk(on_stop=lambda i, p, here: self.look_and_say(m, i), source=source)
             stops = out.get("stops", [])
             log("chat", "walked", seconds=out["seconds"], writes=out["writes"], errors=out["errors"], stops=len(stops), rooms=",".join(out["rooms"]))
             if out.get("errors"):

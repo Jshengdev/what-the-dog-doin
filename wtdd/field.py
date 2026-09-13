@@ -23,7 +23,9 @@ at GET /field and the remote draws the dot from it, whichever process runs the w
 means a walk is live and a second walk (the button during a chat round, or the reverse) is refused, never interleaved. Stops: map.json `stops` is a list
 of path point indices (double-click a path point on the remote); at each one the walk pauses and calls on_stop(index,
 point, room), the lights hold, then it resumes. The chat's wake sequence passes its look-and-say as on_stop; with no
-stops on the map it looks once at the end of the path. Measured on the live wake demo
+stops on the map it looks once at the end of the path. source="dog" (WTDD_ROUND=dog in the chat): the entity is the
+real dog's calibrated odometry pose from the API, the follower (POST /dog/follow) drives it and pauses at the stops,
+and the walk ends when the follower ends; a failed follow raises with the lights' numbers in the message. Measured on the live wake demo
 (2026-09-13): dark start 1.46 s, walk 63.6 s across four rooms (seven crossings, five lights), 67 writes, 0 errors.
 """
 from __future__ import annotations
@@ -98,11 +100,29 @@ def _publish(d: dict[str, Any] | None) -> None:
     os.replace(tmp, FIELD)
 
 
-def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | None], Any] | None = None) -> dict[str, Any]:
+API = "http://127.0.0.1:7788"
+
+
+def _dog() -> dict[str, Any]:
+    """The dog's believed map pose and follow status from the API (source="dog")."""
+    import requests
+    d = requests.get(f"{API}/dog/state", timeout=3).json()
+    if not d.get("map"):
+        raise RuntimeError("the dog has no map pose (not calibrated, or no state)")
+    return d
+
+
+def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | None], Any] | None = None,
+         source: str = "entity") -> dict[str, Any]:
     """Runs the entity along the map's path in real time and drives the real lights (see the module doc for the order).
     At each of the map's stops (path point indices) the entity pauses, on_stop(index, point, room) runs to completion
     (the chat's look-and-say; the lights hold), then the walk resumes from the same spot. Returns seconds, dark_ms,
-    writes, errors, rooms crossed, stops done, latency_ms per light, and the light labels."""
+    writes, errors, rooms crossed, stops done, latency_ms per light, and the light labels.
+    source="dog": the entity IS the dog. Its position is the calibrated odometry pose from GET /dog/state (the API's
+    follower must be running: POST /dog/follow first), the stops are where the follower pauses (on_stop runs, then
+    POST /dog/resume), and the walk ends when the follower is done or failed (the error is in the row)."""
+    if source not in ("entity", "dog"):
+        raise ValueError(f"source must be entity or dog, got {source!r}")
     m = json.loads(MAP.read_text())
     pts, ent, lights, rooms = m["path"], m.get("entity", {}), m.get("lights", []), m.get("rooms", [])
     if len(pts) < 2:
@@ -147,7 +167,7 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
 
     with step("field", "field.walk", "map", {"path_pts": len(pts), "lights": len(lights), "radius": ent.get("radius_px"),
                                              "falloff": ent.get("falloff"), "speed": speed, "seconds": round(total / speed, 1),
-                                             "stops": stops, "dry": dry}) as r:
+                                             "stops": stops, "dry": dry, "source": source}) as r:
         t_dark = time.monotonic()
         if not dry:                                      # dark start: everything off, and wait for it
             for lid, fut in {L["id"]: pool.submit(_write, L, 0) for L in lights}.items():
@@ -159,10 +179,19 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
         rooms_seen: list[str] = []
         stops_done: list[int] = []
         pending_stops = list(stops)
+        follow_error: str | None = None
         try:
           while True:
-            s = min(total, (time.monotonic() - t0) * speed)
-            p = at(s)
+            if source == "dog":
+                d = _dog()
+                p = tuple(d["map"]["p"])
+                f = d.get("follow") or {}
+                if not f.get("active") and not stops_done and not f.get("done") and not f.get("error"):
+                    raise RuntimeError("the dog's follower is not running (POST /dog/follow first)")
+                s = cum[min(int(f.get("i", 0)), len(cum) - 1)]
+            else:
+                s = min(total, (time.monotonic() - t0) * speed)
+                p = at(s)
             here = room_of(p, rooms)
             if here and (not rooms_seen or rooms_seen[-1] != here):
                 rooms_seen.append(here)
@@ -185,9 +214,10 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                     if not dry:
                         writes += 1
                         inflight[lid] = pool.submit(_write, L, level)
-            live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None}
-            if pending_stops and s >= cum[pending_stops[0]]:
-                i = pending_stops.pop(0)
+            live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None, "source": source}
+            at_stop = (pending_stops and s >= cum[pending_stops[0]]) if source == "entity" else (f.get("stopped_at") is not None and f["stopped_at"] not in stops_done)
+            if at_stop:
+                i = pending_stops.pop(0) if source == "entity" else int(f["stopped_at"])
                 _publish({**live, "stop": i})
                 log("field", f"stop {i}: pausing", room=here or "-", x=int(p[0]), y=int(p[1]))
                 t_pause = time.monotonic()
@@ -196,8 +226,15 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                 t0 += time.monotonic() - t_pause                 # resume from the same spot
                 stops_done.append(i)
                 log("field", f"stop {i}: resuming", paused_s=round(time.monotonic() - t_pause, 1))
+                if source == "dog":
+                    import requests
+                    requests.post(f"{API}/dog/resume", json={}, timeout=3)
             _publish(live)
-            if s >= total:
+            if source == "dog":
+                if not f.get("active"):
+                    follow_error = f.get("error")
+                    break
+            elif s >= total:
                 break
             time.sleep(1 / HZ)
         finally:
@@ -213,6 +250,9 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
         pool.shutdown(wait=True)
         latency = {_label(L): round(1000 * sum(lat[L["id"]]) / len(lat[L["id"]])) if lat[L["id"]] else None for L in lights}
         out = {"seconds": round(time.monotonic() - t0, 1), "dark_ms": dark_ms, "writes": writes, "errors": errors,
-               "rooms": rooms_seen, "stops": stops_done, "latency_ms": latency, "lights": [_label(L) for L in lights]}
+               "rooms": rooms_seen, "stops": stops_done, "latency_ms": latency, "lights": [_label(L) for L in lights],
+               "source": source, "follow_error": follow_error}
         r["state_after"] = out
+        if follow_error:
+            raise RuntimeError(f"the dog's follow ended with: {follow_error} (lights walked {out['seconds']} s, {writes} writes)")
         return out

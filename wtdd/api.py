@@ -9,7 +9,9 @@
   GET  /field                     the running walk's position, room, levels and stop from <repo>/field.json, {} when idle (polled at 10 Hz)
   GET  /evals                     <repo>/evals.json, every scenario's newest trials (python -m wtdd.evals --write)
   GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms (python -m wtdd.watch)
-  GET  /dog/state                 the shared dog session's state; POST /dog/drive {x,y,z} and /dog/stop for hold-to-drive
+  GET  /dog/state                 the shared dog session's state (+ map pose, follow status); POST /dog/drive {x,y,z}, /dog/stop
+  POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
+  POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
   POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
@@ -108,15 +110,29 @@ class H(BaseHTTPRequestHandler):
             MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), zones=len(data.get("zones", [])))
             return self._json(200, {"ok": True})
-        if u.path in ("/dog/drive", "/dog/stop"):
+        if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume"):
+            import math
+            from .dog import nav
             from .dog.session import DogSession
             n = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(n) or b"{}") if n else {}
             s = DogSession.get()
             try:
-                out = s.stop() if u.path == "/dog/stop" else s.drive(body.get("x", 0), body.get("y", 0), body.get("z", 0))
+                if u.path == "/dog/stop":
+                    out = s.stop()
+                elif u.path == "/dog/drive":
+                    out = s.drive(body.get("x", 0), body.get("y", 0), body.get("z", 0))
+                elif u.path == "/dog/calibrate":      # {p: [px, py], heading_deg} or {p, toward: [px, py]} (face that point)
+                    p = body["p"]
+                    h = math.radians(body["heading_deg"]) if "heading_deg" in body else nav.heading_of(p, body["toward"])
+                    out = {"map": s.calibrate(p, h)}
+                elif u.path == "/dog/follow":         # the map's path and stops, from the nearest waypoint
+                    m = json.loads(MAP.read_text())
+                    out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
+                else:
+                    out = {"follow": s.resume()}
                 return self._json(200, {"ok": True, **out})
-            except Exception as e:  # noqa: BLE001  (a connect failure is reported, never hidden)
+            except Exception as e:  # noqa: BLE001  (a connect failure or a refused follow is reported, never hidden)
                 return self._json(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         if not u.path.startswith("/tools/"):
             return self._json(404, {"error": "not found"})

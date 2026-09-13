@@ -37,6 +37,7 @@
   .lamp { stroke: #262323; stroke-width: 3; cursor: grab; } .lamp-glow { fill: #ffcc44; }
   .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; } .strip-glow { stroke: #ffcc44; stroke-width: 24; stroke-linecap: round; }
   .handle { fill: #fff; stroke: #262323; stroke-width: 2; cursor: grab; }
+  .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
   .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 17px; fill: #262323; paint-order: stroke; stroke: #fbfaf7; stroke-width: 5px; user-select: none; pointer-events: none; }
   .levels { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; }
   .bar { display: inline-block; height: 7px; background: #ffcc44; border-radius: 4px; vertical-align: middle; margin-left: 8px; transition: width .2s; }
@@ -136,6 +137,7 @@ function App() {
     if (!map || drag.current || moved.current) { moved.current = false; return; }
     const p = toMap(e);
     if (mode === "path") setMap({ ...map, path: [...map.path, p] });
+    if (mode === "here") { setMode(null); post("/dog/calibrate", { p, heading_deg: dog?.map?.heading_deg ?? 0 }).then(r => r.json()).then(setLast); }
     if (mode === "dot" && placing) placeLight("dot", [p]);
     if (mode === "line" && placing) { if (!pending) setPending(p); else placeLight("line", [pending, p]); }
   };
@@ -169,10 +171,11 @@ function App() {
             <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2 || dot !== null}>${dot ? "walking…" : "▶ walk the path"}</button>
             <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
+            <button class=${mode === "here" ? "on" : ""} onClick=${() => { setMode(mode === "here" ? null : "here"); setPlacing(null); }}>${mode === "here" ? "click where the dog is" : "dog is here…"}</button>
             <button class="key" onClick=${saveMap}>save</button>
             <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
-          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : "drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · double-click a light to relabel · save"}</div>
+          <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click along the floor; drag any point to adjust; double-click a point to make it a stop (the dog nods and reports there)" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · double-click a light to relabel · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
             ${(map.rooms || []).map(r => html`<polygon key=${r.name} class=${"room" + (here === r.name ? " here" : "")} points=${r.poly.map(p => p.join(",")).join(" ")}/>`)}
@@ -195,6 +198,7 @@ function App() {
                 <text class="lbl" x=${x} y=${y - 22} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
+            ${dog?.map && html`<g><line class="dognose" x1=${dog.map.p[0]} y1=${dog.map.p[1]} x2=${dog.map.p[0] + 34 * Math.cos(dog.map.heading_deg * Math.PI / 180)} y2=${dog.map.p[1] + 34 * Math.sin(dog.map.heading_deg * Math.PI / 180)}/><circle class="dogdot" cx=${dog.map.p[0]} cy=${dog.map.p[1]} r="13"/><text class="lbl" x=${dog.map.p[0] + 18} y=${dog.map.p[1] + 30}>dog</text></g>`}
             ${dot && html`<circle class="field" cx=${dot[0]} cy=${dot[1]} r=${ent.radius_px || 220}/><circle class="dot-halo" cx=${dot[0]} cy=${dot[1]} r="26"/><circle class="dot" cx=${dot[0]} cy=${dot[1]} r="11"/>`}
           </svg>`}
         </div>
@@ -205,6 +209,12 @@ function App() {
           <div class="mono" style=${{ marginBottom: 6 }}>${dog ? (dog.connected ? `connected · mode ${dog.state?.mode ?? "?"} · pos ${(dog.state?.position || []).slice(0, 2).map(v => (+v).toFixed(2)).join(", ")} · ${dog.moving ? "moving " + dog.vel.map(v => (+v).toFixed(1)).join("/") : "still"}` : "not connected · the first command connects (about 1 s)") : "…"}</div>
           <div class="row tight">${key("q", "Q turn ◀")}${key("w", "W ▲")}${key("e", "E turn ▶")}<span class="mono">hold a key or a button · 0.3 m/s · 0.5 rad/s</span></div>
           <div class="row tight">${key("a", "A ◀")}${key("s", "S ▼")}${key("d", "D ▶")}<button class="small" onClick=${() => post("/dog/stop")}>stop</button></div>
+          <div class="row tight">
+            <button class="small" disabled=${!map || (map.path || []).length < 2} title="the dog stands on path point 1 facing point 2" onClick=${() => post("/dog/calibrate", { p: map.path[0], toward: map.path[1] }).then(r => r.json()).then(setLast)}>at path start, facing pt 2</button>
+            <button class=${"small" + (dog?.follow?.active ? " on" : "")} disabled=${!dog?.calibrated || dog?.follow?.active} onClick=${() => post("/dog/follow", {}).then(r => r.json()).then(setLast)}>follow the path</button>
+            <button class="small" disabled=${dog?.follow?.stopped_at == null} onClick=${() => post("/dog/resume", {}).then(r => r.json()).then(setLast)}>resume</button>
+            <span class="mono">${dog?.map ? `thinks: ${dog.map.p[0]}, ${dog.map.p[1]} · ${dog.map.heading_deg}°` : "not calibrated"}${dog?.follow?.active ? ` · wp ${dog.follow.i}/${dog.follow.n - 1} · ${dog.follow.dist_px ?? "?"} px · ${dog.follow.err_deg ?? "?"}°${dog.follow.stopped_at != null ? ` · stopped at ${dog.follow.stopped_at}` : ""}` : dog?.follow?.error ? ` · follow: ${dog.follow.error}` : dog?.follow?.done ? ` · followed ${dog.follow.reached.length} waypoints` : ""}</span>
+          </div>
           <div class="row"><button class="key" disabled=${busy !== null} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button><button disabled=${busy !== null} onClick=${() => lookShot("level")}>level photo</button><button disabled=${busy !== null} onClick=${() => lookShot("sit")}>sit photo</button>
             ${cmd("sit", "dog_cmd", { name: "Sit" })}${cmd("stand", "dog_cmd", { name: "RiseSit" })}${cmd("hello", "dog_cmd", { name: "Hello" })}
             ${cmd("nod + say to castle", "dog_say", {}, { key: true, title: "nod, photo, one sentence from the vision model, posted with the photo" })}</div>
