@@ -2,120 +2,96 @@
   "note": "Map space = house.svg viewBox (0 0 1060 1540). path = the entity's route (draw on the page). entity = radius_px (how far a light reacts), speed_px_s, falloff (curve steepness; 1 linear, higher = brightness holds near the center then drops), other_room_factor (lights in rooms the entity is not in are scaled by this), samples (points along the strip line). lights = Johnny's placed markers: kind dot (lamp) or line (the strip); pts in map space; room is computed from rooms. zones stay for the chat commands and the light show.",
   "path": [
     [
-      417,
-      462
+      505,
+      526
     ],
     [
-      416,
-      414
+      530,
+      475
     ],
     [
-      400,
-      457
-    ],
-    [
-      401,
-      504
-    ],
-    [
-      408,
-      563
-    ],
-    [
-      432,
-      622
-    ],
-    [
-      459,
-      672
-    ],
-    [
-      495,
-      715
-    ],
-    [
-      522,
-      768
-    ],
-    [
-      523,
-      814
-    ],
-    [
-      504,
-      875
-    ],
-    [
-      477,
-      921
-    ],
-    [
-      469,
-      974
+      487,
+      505
     ],
     [
       482,
-      1029
+      550
+    ],
+    [
+      503,
+      593
+    ],
+    [
+      530,
+      635
+    ],
+    [
+      563,
+      676
+    ],
+    [
+      570,
+      727
+    ],
+    [
+      567,
+      793
+    ],
+    [
+      556,
+      850
+    ],
+    [
+      533,
+      898
+    ],
+    [
+      507,
+      949
+    ],
+    [
+      486,
+      1007
+    ],
+    [
+      467,
+      954
     ],
     [
       461,
-      1077
-    ],
-    [
-      418,
-      1055
-    ],
-    [
-      425,
-      1010
-    ],
-    [
-      459,
-      960
-    ],
-    [
-      492,
-      927
-    ],
-    [
-      517,
-      878
-    ],
-    [
-      520,
-      820
-    ],
-    [
-      520,
-      775
+      904
     ],
     [
       510,
-      729
+      869
     ],
     [
-      488,
-      669
+      549,
+      827
     ],
     [
-      460,
-      623
+      565,
+      782
     ],
     [
-      430,
-      582
+      565,
+      730
     ],
     [
-      419,
-      534
+      533,
+      683
     ],
     [
-      416,
-      482
+      503,
+      637
     ],
     [
-      413,
-      492
+      502,
+      581
+    ],
+    [
+      497,
+      536
     ]
   ],
   "zones": [
