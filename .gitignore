@@ -40,3 +40,4 @@ state.json
 intruder.on
 listen.json
 pending.json
+field.stop

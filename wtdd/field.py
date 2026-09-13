@@ -43,6 +43,7 @@ from .ledger import log, step
 MAP = ROOT / "ui" / "map.json"
 HZ = 10.0
 FIELD = ROOT / "field.json"   # the running walk: p, here, levels, s, total, stop; written at HZ, removed at the end (GET /field)
+STOP = ROOT / "field.stop"    # POST /field/stop touches it: the running walk ends at its next tick (lights off, row written)
 BUSY_S = 2.0                  # a field.json younger than this means a walk is live somewhere (the remote or the chat): refuse a second
 
 
@@ -132,14 +133,16 @@ def _dog() -> dict[str, Any]:
 
 
 def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | None], Any] | None = None,
-         source: str = "entity") -> dict[str, Any]:
+         source: str = "entity", follower: bool = True) -> dict[str, Any]:
     """Runs the entity along the map's path in real time and drives the real lights (see the module doc for the order).
     At each of the map's stops (path point indices) the entity pauses, on_stop(index, point, room) runs to completion
     (the chat's look-and-say; the lights hold), then the walk resumes from the same spot. Returns seconds, dark_ms,
     writes, errors, rooms crossed, stops done, latency_ms per light, and the light labels.
     source="dog": the entity IS the dog. Its position is the calibrated odometry pose from GET /dog/state (the API's
     follower must be running: POST /dog/follow first), the stops are where the follower pauses (on_stop runs, then
-    POST /dog/resume), and the walk ends when the follower is done or failed (the error is in the row)."""
+    POST /dog/resume), and the walk ends when the follower is done or failed (the error is in the row).
+    source="dog", follower=False: the lights simply follow the dog wherever it is driven (the controller, the keys),
+    no route and no stops, until POST /field/stop (or STOP appears); the row says how long and how many writes."""
     if source not in ("entity", "dog"):
         raise ValueError(f"source must be entity or dog, got {source!r}")
     m = json.loads(MAP.read_text())
@@ -150,6 +153,7 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
     stops = sorted({int(i) for i in m.get("stops", []) if 0 <= int(i) < len(pts)})
     if FIELD.exists() and time.time() - FIELD.stat().st_mtime < BUSY_S:   # another process's walk is live: refuse, never interleave
         raise RuntimeError(f"a walk is already running ({FIELD.name} written {round(time.time() - FIELD.stat().st_mtime, 1)} s ago)")
+    STOP.unlink(missing_ok=True)
     for L in lights:
         (ax, ay), (bx, by) = L["pts"][0], L["pts"][-1]     # a dot's midpoint is the dot itself
         L["room"] = room_of(((ax + bx) / 2, (ay + by) / 2), rooms)
@@ -187,7 +191,7 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
 
     with step("field", "field.walk", "map", {"path_pts": len(pts), "lights": len(lights), "radius": ent.get("radius_px"),
                                              "falloff": ent.get("falloff"), "speed": speed, "seconds": round(total / speed, 1),
-                                             "stops": stops, "dry": dry, "source": source}) as r:
+                                             "stops": stops, "dry": dry, "source": source, "follower": follower}) as r:
         t_dark = time.monotonic()
         if not dry:                                      # dark start: everything off, and wait for it
             for lid, fut in {L["id"]: pool.submit(_write, L, 0) for L in lights}.items():
@@ -206,7 +210,7 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                 d = _dog()
                 p = tuple(d["map"]["p"])
                 f = d.get("follow") or {}
-                if not f.get("active") and not stops_done and not f.get("done") and not f.get("error"):
+                if follower and not f.get("active") and not stops_done and not f.get("done") and not f.get("error"):
                     raise RuntimeError("the dog's follower is not running (POST /dog/follow first)")
                 s = cum[min(int(f.get("i", 0)), len(cum) - 1)]
             else:
@@ -234,8 +238,8 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                     if not dry:
                         writes += 1
                         inflight[lid] = pool.submit(_write, L, level)
-            live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None, "source": source}
-            at_stop = (pending_stops and s >= cum[pending_stops[0]]) if source == "entity" else (f.get("stopped_at") is not None and f["stopped_at"] not in stops_done)
+            live = {"p": [round(p[0]), round(p[1])], "here": here, "levels": lv, "s": round(s), "total": round(total), "dry": dry, "stop": None, "source": source, "follower": follower}
+            at_stop = (pending_stops and s >= cum[pending_stops[0]]) if source == "entity" else (follower and f.get("stopped_at") is not None and f["stopped_at"] not in stops_done)
             if at_stop:
                 i = pending_stops.pop(0) if source == "entity" else int(f["stopped_at"])
                 _publish({**live, "stop": i})
@@ -250,11 +254,14 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
                     import requests
                     requests.post(f"{API}/dog/resume", json={}, timeout=3)
             _publish(live)
-            if source == "dog":
+            if STOP.exists():
+                log("field", "stopped by request", after_s=round(time.monotonic() - t0, 1))
+                break
+            if source == "dog" and follower:
                 if not f.get("active"):
                     follow_error = f.get("error")
                     break
-            elif s >= total:
+            elif source == "entity" and s >= total:
                 break
             time.sleep(1 / HZ)
         finally:
@@ -271,7 +278,7 @@ def walk(dry: bool = False, on_stop: Callable[[int, tuple[float, float], str | N
         latency = {_label(L): round(1000 * sum(lat[L["id"]]) / len(lat[L["id"]])) if lat[L["id"]] else None for L in lights}
         out = {"seconds": round(time.monotonic() - t0, 1), "dark_ms": dark_ms, "writes": writes, "errors": errors,
                "rooms": rooms_seen, "stops": stops_done, "latency_ms": latency, "lights": [_label(L) for L in lights],
-               "source": source, "follow_error": follow_error}
+               "source": source, "follower": follower, "follow_error": follow_error}
         r["state_after"] = out
         if follow_error:
             raise RuntimeError(f"the dog's follow ended with: {follow_error} (lights walked {out['seconds']} s, {writes} writes)")

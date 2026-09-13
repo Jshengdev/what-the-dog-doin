@@ -12,6 +12,7 @@
   GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms and the intruder flag
   POST /intruder {on}             arm/disarm the intruder watch (<repo>/intruder.on; python -m wtdd.watch sounds intruder_alarm)
   POST /map/restore               ui/route-saved.json's path and stops back into the map (GET /route-saved.json serves it: the guide while drawing)
+  POST /field/stop                end the running walk (any source) at its next tick
   GET  /dog/state                 the shared dog session's state (+ map pose, follow status); POST /dog/drive {x,y,z}, /dog/stop
   POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
@@ -39,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import tools
 from .config import ROOT
-from .field import FIELD, MAP, check_path
+from .field import FIELD, MAP, STOP, check_path
 from pathlib import Path
 
 PICTURES = Path("~/Pictures/wtdd").expanduser()
@@ -124,6 +125,10 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         u = urlparse(self.path)
+        if u.path == "/field/stop":   # end the running walk at its next tick (lights off, its row written)
+            STOP.write_text(time.strftime("%Y-%m-%dT%H:%M:%S") + "\n")
+            log("api", "field stop requested")
+            return self._json(200, {"ok": True})
         if u.path == "/map/restore":   # the saved route (ui/route-saved.json) back into the map; the current one goes to map.prev.json
             saved = json.loads((UI / "route-saved.json").read_text())
             m = json.loads(MAP.read_text())
