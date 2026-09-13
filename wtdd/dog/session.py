@@ -286,6 +286,7 @@ class DogSession:
                     fs["done"] = True
                 finally:
                     self.vel, self.vel_t = (0.0, 0.0, 0.0), 0.0
+                    await self._halt()
                     fs["active"] = False
                     r["state_after"] = {"reached": list(fs["reached"]), "of": len(path), "seconds": round(time.time() - fs["started"], 1), "map": self.map_pose()}
         except asyncio.CancelledError:
@@ -318,10 +319,28 @@ class DogSession:
         return {"vel": list(self.vel), "hold_s": DRIVE_HOLD_S}
 
     def stop(self) -> dict[str, Any]:
+        """Cancels the follower, zeroes the held velocity, and halts the body now: a zero through the avoidance service
+        when it is on (it keeps the last velocity until told zero; measured 2026-09-13, the dog kept walking after
+        StopMove alone), then StopMove, then the state read back."""
         if self._follower and not self._follower.done():
             self._follower.cancel()
         self.vel, self.vel_t = (0.0, 0.0, 0.0), 0.0
-        return {"vel": [0.0, 0.0, 0.0]}
+        out: dict[str, Any] = {"vel": [0.0, 0.0, 0.0]}
+        if self.body is not None:
+            out["halt"] = self.run(self._halt(), timeout=10)
+        return out
+
+    async def _halt(self) -> dict[str, Any]:
+        """The stop that works with avoidance on: zero velocity to the avoidance service, StopMove, state read back."""
+        b = self.body
+        if b._avoid:
+            await b._tick("avoid", 0.0, 0.0, 0.0)
+        code = await b.cmd("StopMove")
+        self.moving = False
+        st = await b.fresh_state(required=True)
+        v = st.get("velocity") or [0, 0, 0]
+        log("dog", "halt", stop_code=code, avoid=bool(b._avoid), velocity=[round(x, 2) for x in v])
+        return {"stop_code": code, "velocity": v}
 
     async def _drive_loop(self) -> None:
         while True:
@@ -333,8 +352,7 @@ class DogSession:
                     await asyncio.sleep(1 / MOVE_HZ)
                 else:
                     if self.moving:
-                        await self.body.cmd("StopMove")
-                        self.moving = False
+                        await self._halt()   # zero through the avoidance service first when it is on, then StopMove
                     await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 return
