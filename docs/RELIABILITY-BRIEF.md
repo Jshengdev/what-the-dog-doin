@@ -61,3 +61,14 @@ Output of `grep -rn "DEMO_CACHE:" .` with one line each on what is cached and ho
 ## Idempotence
 
 What re-running the agent does and does not do to real accounts.
+
+## Measured so far (2026-09-13, from ledger.jsonl)
+
+| What | Result | Regenerate |
+|---|---|---|
+| iMessage post + read-back into the housemates group | 2 of 2 confirmed (text guid, photo guid), 0 duplicates | `python -m wtdd.chat send/photo` then `chat.post` rows |
+| Hue cloud route reachability | probe ok: 7 lights, 4 in Living room | `python -m wtdd.hue probe` |
+| Hue set + read-back, one light | ok, ~0.8 s per set incl. GET read-back | `python -m wtdd.hue set special --bri 50` |
+| Hue rate limit, cloud route | 15 of 15 quick sets ok, no 429, median 794 ms | `python -m wtdd.hue burst special --n 15` |
+| Hue alternating red/blue signal | ok, read back `signal: alternating` | `python -m wtdd.hue signal special --seconds 5` |
+| Text to lights, whole chain | wake, "turn the lights off", "lights on pls", stop: living room zone (4 lights) off then on, read back, 2.7 s per zone change | `python -m wtdd.chat simulate "what the dog doin" "lights off" "lights on" "stop"` |
