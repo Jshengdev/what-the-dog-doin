@@ -20,8 +20,8 @@ it (the vision model is told what the housemates said it got wrong). WTDD_ROUND=
 real dog's: the wake starts the API's path follower (the dog must be calibrated on the remote first) and the field
 follows the dog's believed pose; unset, the entity walks the drawn path and the dog is hand-driven. WTDD_WAKE_SHOW=1 makes a wake run the
 demo in Johnny's order (dog_on_fire picture, "dog doin", the walk with a look-and-say at every stop on the map: nod,
-photo, one sentence from the vision model posted with the photo, and with WTDD_ALARM=1 the stranger alarm when a person
-is in frame, "yo, we don't know this guy" plus light_alarm; then "dog done") instead of a text ack. WTDD_AGENT=1
+photo, one sentence from the vision model posted with the photo, and with WTDD_ALARM=1 "who dis?!" when a person is in frame
+and a hold of VERDICT_WAIT_S for the group's verdict; then "dog done") instead of a text ack. WTDD_AGENT=1
 sends an armed message that is not a fixed command to wtdd.agent.ask with the chat context. A failed command is
 reported to the group as its class and message, never faked. Live wake demo receipt (2026-09-13 03:0x, in
 README.md): "what teh dog doin" recognized at 0.94, picture 3.4 s, walk 63.6 s, 3 posts, 3 read-back
@@ -45,6 +45,7 @@ STATE = config.ROOT / "state.json"
 PENDING = config.ROOT / "pending.json"   # the open question from intruder_alarm ("who dis?!"): the chat's next answer decides
 HEARTBEAT = config.ROOT / "listen.json"  # written every poll: the remote's "group chat" status reads it (GET /chat)
 PENDING_WINDOW_S = 120
+VERDICT_WAIT_S = 45.0         # at a stop with a person in frame the round holds this long for the group's answer
 IDK = re.compile(r"\b(idk|dunno|no idea|dont know|don t know|no clue|not me|nope|who|never seen|stranger)\b")
 GATHER_S = 6.0                # after "yo dog ...", the same sender's next messages within this long join the request
 
@@ -115,14 +116,30 @@ class Listener:
         except Exception as e:  # noqa: BLE001
             self.say(f"say:{k}", f"couldn't look: {type(e).__name__}: {str(e)[:100]}")
             return
-        if seen.get("person") and _flag("WTDD_ALARM"):   # anyone in frame is a stranger: recognizing housemates is not built
-            self.say(f"alarm:{k}", "yo, we don't know this guy")
-            try:
-                alarm = tools.call("light_alarm")
-                log("chat", "alarm", signaled=len(alarm["signaled"]), errors=len(alarm["errors"]))
-                time.sleep(float(alarm["seconds"]))
-            except Exception as e:  # noqa: BLE001
-                self.say(f"alarm-fail:{k}", f"couldn't sound the alarm: {type(e).__name__}: {str(e)[:100]}")
+        if seen.get("person") and _flag("WTDD_ALARM"):   # someone in frame: ask the group, hold here for its verdict
+            self.say(f"alarm:{k}", "who dis?!")
+            PENDING.write_text(json.dumps({"kind": "who_dis", "t": time.time(), "file": seen.get("file"), "seconds": 5,
+                                           "trigger": f"alarm:{k}", "classes": (seen.get("detector") or {}).get("classes")}))
+            self.await_verdict(VERDICT_WAIT_S)
+
+    def await_verdict(self, seconds: float) -> bool:
+        """After "who dis?!" at a stop, the listener is inside the round, so it reads the chat here: the group's next
+        message decides (verdict(): "idk" = STRANGER DANGER + the alarm, else stand down). No answer in `seconds` =
+        the question is withdrawn and the round goes on; that is logged, never faked."""
+        t0 = time.monotonic()
+        log("chat", "who dis: waiting for the group's verdict", seconds=seconds)
+        while time.monotonic() - t0 < seconds:
+            msgs = db.new_messages(self.guid, self.last)
+            if msgs:
+                memory.store(self.guid, msgs)
+                self.last = msgs[-1]["rowid"]
+                for m in msgs:
+                    if m.get("text") and self.allowed(m) and self.verdict(m):
+                        return True
+            time.sleep(1.0)
+        PENDING.unlink(missing_ok=True)
+        log("chat", "who dis: no answer at the stop, moving on", waited_s=round(time.monotonic() - t0))
+        return False
 
     def wake_show(self, m: dict[str, Any]) -> None:
         """The wake demo, in Johnny's order: the picture, "dog doin" as the walk starts, the walk (wtdd/field.py, the same
