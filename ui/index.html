@@ -197,17 +197,17 @@ function App() {
 
   return html`<div class="wrap">
     <div class="top"><h1>what the dog doin <span class="mono">· ${admin ? "admin" : "demo"}</span></h1><span class="mono"><span class="live">live</span> · python -m wtdd.api · every button is one file in wtdd/tools · <a href=${admin ? "#" : "#admin"} style=${{ color: "inherit" }}>${admin ? "demo view" : "admin view"}</a></span></div>
-    <div class="row" style=${{ margin: "0 0 12px" }}>
+    <div class="status-row">
       ${(() => {
-        const st = dog?.state, age = st?.age_ms;
+        const age = dog?.state?.age_ms;
         const dogOn = dog?.connected && age != null && age < 2000, dogStale = dog?.connected && !dogOn;
         const hueOk = status && !status.error && Array.isArray(status.hue), stripOk = status && status.strip && !status.strip.error;
-        const chatOn = chat?.alive;
+        const chatOn = chat?.alive, watchOn = watch && watch.age_ms != null && watch.age_ms < 3000;
         return html`
-          <span class=${"st " + (dogOn ? "on" : dogStale ? "warn" : "")}><i></i>dog ${dogOn ? `on · ${st.hz} Hz · ${dog.calibrated ? "located" : "not located"}${dog.avoid ? " · avoid on" : ""}` : dogStale ? `stale · last state ${Math.round(age / 1000)} s ago` : "off"}</span>
-          <span class=${"st " + (hueOk && stripOk ? "on" : hueOk || stripOk ? "warn" : "")}><i></i>lights ${status ? `${hueOk ? `hue ${status.hue.filter(l => l.room === "Living room").length} read back` : "hue: no answer"} · ${stripOk ? `strip ${status.strip.on ? "on" : "off"}` : "strip: no answer"}` : "reading…"}</span>
-          <span class=${"st " + (chatOn ? "on" : "")}><i></i>group chat ${chat ? (chatOn ? `${chat.group} · listening${chat.armed ? ` · armed by ${chat.armed_by || "?"}` : ""}${chat.pending ? " · waiting for who dis" : ""}` : `listener not running (last beat ${chat.age_s ?? "never"} s ago)`) : "…"}</span>
-          <span class=${"st " + (watch && watch.age_ms != null && watch.age_ms < 3000 ? "on" : "")}><i></i>detector ${watch && watch.age_ms != null && watch.age_ms < 3000 ? `live · ${watch.ms} ms` : "off"}${watch?.intruder ? " · intruder watch armed" : ""}</span>`;
+          <div class=${"stat " + (dogOn ? "on" : dogStale ? "warn" : "")}><span class="sq"></span><b>dog</b><span>${dogOn ? `on · ${dog.calibrated ? "located" : "not located"}${dog.avoid ? " · avoid on" : ""}` : dogStale ? `stale · ${Math.round(age / 1000)} s` : "off"}</span></div>
+          <div class=${"stat " + (hueOk && stripOk ? "on" : hueOk || stripOk ? "warn" : "")}><span class="sq"></span><b>lights</b><span>${status ? (hueOk && stripOk ? "online" : hueOk ? "strip offline" : stripOk ? "hue offline" : "offline") : "reading…"}</span></div>
+          <div class=${"stat " + (chatOn ? "on" : "")}><span class="sq"></span><b>group chat</b><span>${chat ? (chatOn ? `${chat.group} · ${chat.pending ? "waiting for who dis" : chat.armed ? "armed" : "listening"}` : "listener down") : "…"}</span></div>
+          <div class=${"stat " + (watchOn ? "on" : "")}><span class="sq"></span><b>detector</b><span>${watchOn ? `live · ${watch.ms} ms` : "off"}${watch?.intruder ? " · intruder watch armed" : ""}</span></div>`;
       })()}
     </div>
     <div class="grid">
