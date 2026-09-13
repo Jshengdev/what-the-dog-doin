@@ -139,8 +139,8 @@ function App() {
     const t = setInterval(() => fetch(`${API}/dog/state`).then(r => r.json()).then(d => { setDog(d); if (!drag.current) setDogDrag(null); }).catch(() => {}), 1000);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); clearInterval(t); };
   }, []);
-  const markIf = (look, say) => { if (dog?.rec) post("/dog/mark", { look, say }).then(r => r.json()).then(setLast); };   // recording: the action is part of the route
-  const lookShot = async kind => { markIf(kind, true); const out = await run("dog_look", { look: kind });   // recording: this look, and a report, at this stop if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
+  const markIf = (look, say) => { if (dog?.rec) post("/dog/mark", { look, say }).then(r => r.json()).then(setLast); };   // recording: the look pressed here becomes this stop's action, with a report
+  const lookShot = async kind => { markIf(kind, true); const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
   const key = (k, label) => html`<button class="small" onPointerDown=${() => press(k)} onPointerUp=${() => release(k)} onPointerLeave=${() => release(k)}>${label}</button>`;
 
   // ---------- the run: the API walks the entity (wtdd/field.py) and drives the real lights; this page only draws GET /field
