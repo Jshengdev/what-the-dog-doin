@@ -157,14 +157,14 @@ function App() {
         </svg>`}
       </div>
       <div>
-        <div class="panel" style="margin-bottom:16px">
+        <div class="panel" style=${{marginBottom: 16}}>
           <h2>living room · both protocols</h2>
           <div class="row">${btn("lights on", "lights_on", {}, true)}${btn("lights off", "lights_off", {})}${btn("dim 20", "lights_dim", { percent: 20 })}${btn("bright", "lights_dim", { percent: 100 })}</div>
           <div class="row"><input type="number" value=${pct} onInput=${e => setPct(+e.target.value)} min="0" max="100"/>${btn("set %", "lights_dim", { percent: pct })}${btn("strip warm", "strip_temp", { percent: 0 })}${btn("strip cool", "strip_temp", { percent: 100 })}${btn("fade strip", "strip_fade", {})}</div>
           <div class="row">${btn("red/blue 5s", "hue_signal", { light: "special", seconds: 5 })}${btn("zone a", "zone_set", { zone: "a", on: true })}${btn("zone b", "zone_set", { zone: "b", on: true })}${btn("zone c", "zone_set", { zone: "c", on: true })}${btn("read all", "lights_status", {})}</div>
-          ${last && html`<div class="mono" style="margin-top:8px">${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || JSON.stringify(last.result).slice(0, 160))) : last.error}</div>`}
+          ${last && html`<div class="mono" style=${{marginTop: 8}}>${last.ok ? html`<span class="ok">ok</span>` : html`<span class="bad">FAILED</span>`} ${last.tool} ${JSON.stringify(last.args)} → ${last.ok ? (last.result && (last.result.result || JSON.stringify(last.result).slice(0, 160))) : last.error}</div>`}
         </div>
-        ${status && html`<div class="panel" style="margin-bottom:16px"><h2>state · read back</h2><div class="status">
+        ${status && html`<div class="panel" style=${{marginBottom: 16}}><h2>state · read back</h2><div class="status">
           ${status.hue.map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.room} · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}
           <div><b>strip</b> · ${status.strip.error ? status.strip.error : `${status.strip.on ? "on" : "off"} · ${status.strip.brightness_pct}% · temp ${status.strip.temp_pct}%`}</div>
         </div></div>`}
