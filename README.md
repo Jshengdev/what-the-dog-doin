@@ -62,7 +62,7 @@ What happens after a housemate texts "what the dog doin". Each step is one tool 
 
 **Teaching the route.** The map is a hand-drawn floor plan. The dog is located on it by dragging its dot and cone on the remote; drift is corrected the same way. A route is recorded by driving it once with the controller; any look pressed on the way is stored at that spot as the action to replay. "walk the path" replays it, waypoint by waypoint, pausing at each stop to do what was recorded. A planner (`plan_path`, A* over the drawn rooms) exists for point-to-point routes; the demo route is recorded because the drawing has no walls yet.
 
-<p align="center"><img src="docs/media/chat-dogs-eye-view.png" alt="the dog's eye view: a level look and a nod up, as posted to the group" width="420"><br><sub>the dog's eye view, as the group gets it</sub></p>
+<p align="center"><img src="docs/media/chat-dogs-eye-view.png" alt="the dog's eye view: a level look and a nod up, as posted to the group" width="420"></p>
 
 ## The three integrations
 
@@ -114,7 +114,7 @@ The demo run at 15:16, from the ledger (`docs/evidence/ledger-take-2026-09-13.js
 1. A housemate texts "what the dog doin"; the picture and "dog doin" land within five seconds.
 2. The dog drives the route with the lights following. At stop 1 the detector says "couch"; the model corrects it ("really a person on the couch"), names a blanket and a cup, and the group gets "someone on the couch with their feet up. a red blanket on the floor. probably teris cup on the coffee table. put that cup in the sink teri. [detector: couch]" with the boxed photo.
 
-<p align="center"><img src="docs/media/chat-wake-and-picture.png" alt="the group chat: the trigger, the picture, 'dog doin', the couch photo and sentence" width="420"><br><sub>steps 1 and 2 as the group saw them</sub></p>
+<p align="center"><img src="docs/media/chat-wake-and-picture.png" alt="the group chat: the trigger, the picture, 'dog doin', the couch photo and sentence" width="420"></p>
 
 3. At waypoint 14 the follower stops 56 px short and times out (it was running without the dog's obstacle-avoidance service, which had stopped answering after a battery swap; the row says so). The round reports it and continues: it looks where it stands, finds someone at the table, posts the photo, asks "who dis?!" and holds.
 4. A housemate answers "Idk": stranger. "STRANGER DANGER!!!" lands three times, the room strobes for five seconds, every light is put back (5 signaled, 5 restored, 0 errors).
@@ -122,9 +122,9 @@ The demo run at 15:16, from the ledger (`docs/evidence/ledger-take-2026-09-13.js
 6. The socks, by hand: the detector says "bird"; the model says "it says bird but that is really a sock"; posted with the floor frame.
 7. The cups, by hand: "a can and a bottle and a pink cup on the coffee table. probably teris. put them in the dishwasher now. [detector: couch]".
 
-<p align="center"><img src="docs/media/cups-posted.jpg" alt="the cups photo as posted" width="600"><br><sub>the picture the group received for step 7</sub></p>
-<p align="center"><img src="docs/media/eye-second-opinion.png" alt="the eye panel: live feed, boxes, both nod frames, the sock sentence" width="600"><br><sub>the eye panel for step 6: both nod frames, the sent one outlined, the sentence that corrected the detector</sub></p>
-<p align="center"><img src="docs/media/map-lidar-route.png" alt="the map with the LiDAR dots, the route, its three stops and the dog's cone" width="600"><br><sub>the map: the dog's LiDAR on the plan, the recorded route with its three labeled stops</sub></p>
+<p align="center"><img src="docs/media/cups-posted.jpg" alt="the cups photo as posted" width="600"></p>
+<p align="center"><img src="docs/media/eye-second-opinion.png" alt="the eye panel: live feed, boxes, both nod frames, the sock sentence" width="600"></p>
+<p align="center"><img src="docs/media/map-lidar-route.png" alt="the map with the LiDAR dots, the route, its three stops and the dog's cone" width="600"></p>
 
 ## How it was tested
 
@@ -137,9 +137,9 @@ Hardware in a real house: run the job, read what it wrote down, try to break it.
 - **The stranger.** The detector's person box arms the question; the group's answer is the verdict; every step is a row.
 - **One screen.** The remote shows the map with the dog, the live camera with boxes, the last look, the receipts as they happen, and the status of the dog, the lights, the chat and the detector.
 
-<p align="center"><img src="docs/media/chat-bird-before.png" alt="the group chat at 13:54: 'bird 0.40' on the socks" width="480"><br><sub>the failure caught: the detector's "bird" on the socks, before the second opinion existed</sub></p>
-<p align="center"><img src="docs/media/chat-yo-dog.png" alt="'Yo dog' and the reply 'dog unreachable, probe failed just now.'" width="480"><br><sub>a chat turn with the dog off</sub></p>
-<p align="center"><img src="docs/media/remote-demo.png" alt="the remote's demo view" width="720"><br><sub>the remote, demo view</sub></p>
+<p align="center"><img src="docs/media/chat-bird-before.png" alt="the group chat at 13:54: 'bird 0.40' on the socks" width="480"></p>
+<p align="center"><img src="docs/media/chat-yo-dog.png" alt="'Yo dog' and the reply 'dog unreachable, probe failed just now.'" width="480"></p>
+<p align="center"><img src="docs/media/remote-demo.png" alt="the remote's demo view" width="720"></p>
 
 ## How we know it works
 
