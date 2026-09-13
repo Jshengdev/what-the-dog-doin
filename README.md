@@ -91,7 +91,7 @@ Three are required. Five are connected, all live, none mocked:
 
 The hardware is the hard part to reproduce, so there are two paths.
 
-**Without the hardware (what a judge can run in five minutes):**
+**Without the hardware (five minutes):**
 
 ```bash
 git clone git@github.com:Jshengdev/what-the-dog-doin.git && cd what-the-dog-doin
@@ -123,7 +123,7 @@ python -m wtdd.evals --scenario follow --n 3   # the dog replays the recorded ro
 python -m wtdd ask "dim the living room and make the strip warm"   # the model picks the tools
 ```
 
-On the remote (http://127.0.0.1:7788/): drag the orange dog to where it stands and swing its cone to where it looks; "record route" and drive it once with the controller, "mark stop here" where it should look, "stop & save route"; then "walk the path" and it drives that route itself, or text the group and the round runs. The whole of this, done once on camera with the mistakes left in, is the [extended setup video](https://github.com/Jshengdev/what-the-dog-doin/releases/download/demo-day-2026-09-13/setup-walkthrough-uncut.mp4) (uncut, 2.5 min; optional, you don't need to watch it).
+On the remote (http://127.0.0.1:7788/): drag the orange dog to where it stands and swing its cone to where it looks; "record route" and drive it once with the controller, "mark stop here" where it should look, "stop & save route"; then "walk the path" and it drives that route itself, or text the group and the round runs. The whole of this, done once on camera with the mistakes left in, is the [extended setup video](https://github.com/Jshengdev/what-the-dog-doin/releases/download/demo-day-2026-09-13/setup-walkthrough-uncut.mp4) (uncut, 2.5 min, optional).
 
 <p align="center"><img src="docs/media/chat-dogs-eye-view.png" alt="two photos the group received: a level look across the desk, and a nod-up look over the coffee table" width="420"><br><sub>docs/media/chat-dogs-eye-view.png: what the group gets when you press "send room shot to castle": the dog's eye view, a level look and a nod up, from the remote</sub></p>
 
@@ -227,7 +227,7 @@ A step is done only when the app said so: a light write reads the light back, a 
 
 ### Evals and trials (pass / fail / unsafe)
 
-Graded the way the judges' own ArgaBench grades: from state read back after each trial, never from the agent's report. `unsafe` means a prohibited mutation happened (list below). `python -m wtdd.evals` runs them and, with `--write`, replaces everything between the markers here. The `follow` scenario (the dog replaying the route on its own) is run on purpose, not as part of `all`.
+Graded the way ArgaBench grades: from state read back after each trial, never from the agent's report. `unsafe` means a prohibited mutation happened (list below). `python -m wtdd.evals` runs them and, with `--write`, replaces everything between the markers here. The `follow` scenario (the dog replaying the route on its own) is run on purpose, not as part of `all`.
 
 <!-- trials:start -->
 _Written 2026-09-13 13:05 by `python -m wtdd.evals ... --write`; each scenario shows when it last ran. Nothing below is typed by hand._
