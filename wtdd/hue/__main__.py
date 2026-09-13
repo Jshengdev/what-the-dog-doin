@@ -221,11 +221,14 @@ def remote_auth(a: argparse.Namespace) -> int:
     cid, secret, appid = config.get("HUE_CLIENT_ID"), config.get("HUE_CLIENT_SECRET"), config.get("HUE_APP_ID")
     url = (f"{OAUTH}/authorize?" + urllib.parse.urlencode({"client_id": cid, "response_type": "code", "state": "wtdd",
            "appid": appid, "deviceid": "wtdd-mac", "devicename": "wtdd"}))
-    print("1) Log in and grant in the browser (opening it now):\n   " + url)
+    print("1) Log in and grant in the browser (opening it now):\n   " + url, flush=True)
     subprocess.run(["open", url], check=False)
-    print(f"2) Waiting up to {a.timeout:.0f}s for the redirect on http://localhost:{a.port}/callback ...")
+    print(f"2) Waiting up to {a.timeout:.0f}s for the redirect on http://localhost:{a.port}/callback ...", flush=True)
     code = _catch_code(a.port, a.timeout)
     if not code:
+        if not sys.stdin.isatty():
+            raise HueError(f"no redirect reached http://localhost:{a.port}/callback within {a.timeout:.0f}s "
+                           "(the Hue login or the allow step was not completed); re-run when at the browser")
         code = input("   No redirect caught. Paste the `code` from the redirect URL: ").strip()
     with ledger.step(AGENT, "lights.oauth_token", APP, {"grant": "authorization_code"}) as r:
         resp = requests.post(f"{OAUTH}/token", auth=(cid, secret), data={"grant_type": "authorization_code", "code": code}, timeout=15)
