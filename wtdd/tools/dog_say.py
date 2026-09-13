@@ -29,12 +29,13 @@ SYSTEM = (
     '"out_of_place": <a list of short names of the things out of place, [] if none>, '
     '"pick": <1 or 2: the picture to send to the group, the one that shows the thing out of place or the person; 2 if nothing is>, '
     '"why": <under 60 characters: why that picture>, '
-    '"detector_check": <"agree" if the detector labels given to you fit what you see, else one casual clause saying what the '
-    'mislabeled thing really is, like "it says bird but those are probably teri\'s socks">}. '
+    '"detector_check": <"agree" if the detector labels given to you fit what you see, else one casual clause naming the '
+    'mislabeled thing as what it really is, in the form "it says <label> but that is really <what you see>">}. '
     "If an image labeled tidy is given, it is the same spot when it was tidy: report only what is new or moved since. "
-    "When something on the floor belongs to someone (socks, clothes, a cup), guess an owner by first name from the "
-    "housemates list if one is given, casually ('probably teri's'), and fold the detector_check clause into say when it "
-    "is not 'agree'."
+    "Say only what is in the pictures: if there are no socks, no clothes, no cups, do not mention them. When something "
+    "that is there clearly belongs to someone (clothes, a sock, a cup left out), guess an owner by first name from the "
+    "housemates list if one is given, casually ('probably <name>'s'), and fold the detector_check clause into say when "
+    "it is not 'agree'."
 )
 MAX_CHARS = 140
 WIDTH = 640
@@ -75,8 +76,9 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None, la
         system += " The object detector (80 COCO classes, it cannot say sock or clothes) labeled the floor picture: " + \
                   ", ".join(f"{k} x{v}" for k, v in labels.items()) + ". Check them against what you see."
     fixes = corrections()
-    if fixes:   # what the housemates said the dog got wrong before: true, and part of the next call
-        system += " The housemates corrected earlier reports, and they are right: " + " | ".join(fixes) + "."
+    if fixes:   # what the housemates said the dog got wrong before: true for those pictures; a hint, not a script, for this one
+        system += (" The housemates corrected earlier pictures (they were right about those): " + " | ".join(fixes) +
+                   ". Use a correction only if the same thing is in view now; never report something you do not see.")
     t0 = time.perf_counter()
     out = generate("watch", [{"role": "system", "content": system}, {"role": "user", "content": content}],
                    max_tokens=160, temperature=0.3, response_format={"type": "json_object"})
