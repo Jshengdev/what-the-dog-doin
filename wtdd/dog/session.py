@@ -75,6 +75,7 @@ class DogSession:
         self.moving = False
         self._driver: asyncio.Task | None = None
         self.cal: dict[str, Any] | None = None       # odometry <-> map tie (nav.calibration); None until "the dog is here"
+        self.recheck = False                         # set after a reconnect: a power cycle resets the odometry frame, so the tie may be stale
         if CAL_FILE.exists():   # a calibration survives an API restart, not a dog power cycle (the odometry frame resets then)
             self.cal = json.loads(CAL_FILE.read_text())
             log("dog", "calibration loaded", file=CAL_FILE.name, map=self.cal.get("map"), at=self.cal.get("at"))
@@ -93,6 +94,7 @@ class DogSession:
             st = self.body.state()
             if st and st["age_ms"] > STALE_MS:   # the peer is gone (power cycle, hotspot drop): one logged reconnect, no loop
                 log("dog", "WARN session stale, reconnecting once", age_ms=st["age_ms"], state_n=st["n"])
+                self.recheck = True   # the page asks for the dog's position to be confirmed (a power cycle resets the odometry frame)
                 if self._driver:
                     self._driver.cancel()
                 try:
@@ -117,7 +119,7 @@ class DogSession:
         st = self.body.state() if self.body else None
         return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st,
                 "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state,
-                "avoid": self.body._avoid if self.body else None,
+                "avoid": self.body._avoid if self.body else None, "recheck": self.recheck,
                 "rec": {"active": True, "n": len(self.rec["points"]), "points": self.rec["points"], "marks": self.rec["marks"]} if self.rec else None}
 
     # ---- recording a route by driving (the trace of where it thinks it is becomes the map's path)
@@ -193,6 +195,7 @@ class DogSession:
         st = self.run(self.with_body(lambda b: b.fresh_state(required=True)))
         with step("dog", "dog.calibrate", "map", {"p": list(p), "heading_deg": round(math.degrees(heading), 1)}, self.map_pose(st)) as r:
             self.cal = {**nav.calibration(st["position"], st["rpy"][2], p, heading), "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            self.recheck = False
             CAL_FILE.write_text(json.dumps(self.cal))
             r["state_after"] = {"cal": self.cal, "map": self.map_pose(st)}
         log("dog", "calibrated", p=list(p), heading_deg=round(math.degrees(heading), 1))
