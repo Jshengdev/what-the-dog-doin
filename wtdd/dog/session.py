@@ -245,7 +245,7 @@ class DogSession:
         return self.map_pose(st)
 
     # ---- following the drawn path
-    def follow(self, path: list, stops: list[int], reach_px: float = 30.0, from_nearest: bool = True) -> dict[str, Any]:
+    def follow(self, path: list, stops: list[int], reach_px: float = 30.0, from_nearest: bool = True, avoid: bool = True) -> dict[str, Any]:
         if self.cal is None:
             raise RuntimeError("not calibrated: tell the dog where it is first (POST /dog/calibrate)")
         if self._follower and not self._follower.done():
@@ -253,14 +253,16 @@ class DogSession:
         if len(path) < 2:
             raise ValueError("the map path has fewer than 2 points")
         self.run(self._ensure())
-        if not self.body._avoid:          # never follow blind: avoidance on and read back first, or the follow is refused
+        if avoid and not self.body._avoid:   # never follow blind by default: avoidance on and read back first, or the follow is refused
             self.avoid(True)
+        elif not avoid:                      # a person's explicit choice (the service is down): loud, and on the row
+            log("dog", "WARN following WITHOUT obstacle avoidance, by explicit request")
         pose = self.map_pose()
         near_start = math.dist(path[0], pose["p"]) <= START_PX
         start = 0 if (near_start or not from_nearest) else nav.nearest_index(path, pose["p"])   # at the start of a loop: replay it, not the end
         log("dog", "follow from waypoint", start=start, n=len(path), near_start=near_start, dist_to_start_px=round(math.dist(path[0], pose["p"])))
         self.follow_state = {"active": True, "i": start, "n": len(path), "stops": stops, "stopped_at": None, "resume": False,
-                             "reached": [], "started": time.time(), "error": None}
+                             "reached": [], "started": time.time(), "error": None, "avoid": bool(self.body._avoid)}
         self._follower = asyncio.run_coroutine_threadsafe(self._follow(path, stops, reach_px, start), self.loop)
         return dict(self.follow_state)
 
@@ -275,7 +277,7 @@ class DogSession:
         """Waypoint by waypoint from `start`: nav.steer at 10 Hz feeding the drive loop; pauses at stops until resume().
         One dog.follow row at the end with the waypoints reached and the error, if any. Never retries a waypoint."""
         fs = self.follow_state
-        args = {"n": len(path), "start": start, "stops": stops, "reach_px": reach_px}
+        args = {"n": len(path), "start": start, "stops": stops, "reach_px": reach_px, "avoid": bool(self.body._avoid)}
         try:
             with step("dog", "dog.follow", "map", args, self.map_pose()) as r:
                 try:

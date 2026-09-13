@@ -7,17 +7,18 @@ replay never posts twice for one stop. The chat's wake sequence calls wtdd.field
 wake message. Returns seconds, writes, rooms, stops, and the actions done."""
 ARGS = {"dry": {"type": "boolean", "default": False, "doc": "true = compute and log levels, write nothing"},
         "source": {"type": "string", "default": "entity", "doc": "entity | dog"},
-        "act": {"type": "boolean", "default": True, "doc": "source=dog: perform the recorded action at each stop (look, and post when recorded so)"}}
+        "act": {"type": "boolean", "default": True, "doc": "source=dog: perform the recorded action at each stop (look, and post when recorded so)"},
+        "avoid": {"type": "boolean", "default": True, "doc": "source=dog: require the dog's obstacle avoidance (false = follow without it, by explicit choice, logged)"}}
 
 
-def run(dry=False, source="entity", act=True):
+def run(dry=False, source="entity", act=True, avoid=True):
     import json
     import time
     from ..field import MAP, walk
     if source != "dog":
         return walk(dry=dry, source=source)
     from ..commands import _via_api
-    via = _via_api("walk_path", dry=dry, source=source, act=act)   # the API process owns the dog: it runs the whole round
+    via = _via_api("walk_path", dry=dry, source=source, act=act, avoid=avoid)   # the API process owns the dog: it runs the whole round
     if via is not None:
         return via
     from ..dog.session import DogSession
@@ -39,6 +40,6 @@ def run(dry=False, source="entity", act=True):
             done.append({"stop": i, "look": a.get("look", "tilt"), "say": bool(a.get("say", True)), "ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"})
             log("field", f"action at stop {i} FAILED", err=str(e)[:120])
 
-    DogSession.get().follow(m["path"], [int(i) for i in m.get("stops", [])])
+    DogSession.get().follow(m["path"], [int(i) for i in m.get("stops", [])], avoid=avoid)
     out = walk(dry=dry, source="dog", on_stop=on_stop)
     return {**out, "actions": done}

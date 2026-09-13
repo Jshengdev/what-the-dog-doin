@@ -99,6 +99,7 @@ MAX_MOVE_S = 20.0          # per move() call
 MOVE_HZ = 10
 CONNECT_TIMEOUT_S = 30.0   # the driver's own data-channel wait is 15 s inside this
 REQ_TIMEOUT_S = 3.0        # one request/response on the data channel
+AVOID_TIMEOUT_S = 10.0     # the obstacle-avoidance service answers slowly (or not at all) right after a power cycle
 TICK_TIMEOUT_S = 0.5       # one Move tick ack
 FRAME_TIMEOUT_S = 15.0     # switchVideoChannel(True) to first frame
 FRAME_STALE_S = 2.0
@@ -462,14 +463,14 @@ class Body:
             if OBSTACLES_AVOID_API is None:
                 raise RuntimeError("OBSTACLES_AVOID_API is missing from the installed driver; avoid and route are refused")
             topic = RTC_TOPIC["OBSTACLES_AVOID"]
-            set_code, _ = await self._request(topic, OBSTACLES_AVOID_API["SWITCH_SET"], {"enable": on})
+            set_code, _ = await self._request(topic, OBSTACLES_AVOID_API["SWITCH_SET"], {"enable": on}, timeout=AVOID_TIMEOUT_S)
             if set_code != 0:
                 raise RuntimeError(f"OBSTACLES_AVOID SWITCH_SET enable={on} refused: code={set_code}")
             api_code, _ = await self._request(topic, OBSTACLES_AVOID_API["USE_REMOTE_COMMAND_FROM_API"],
-                                              {"is_remote_commands_from_api": on})
+                                              {"is_remote_commands_from_api": on}, timeout=AVOID_TIMEOUT_S)
             if api_code != 0:
                 raise RuntimeError(f"OBSTACLES_AVOID USE_REMOTE_COMMAND_FROM_API={on} refused: code={api_code}")
-            get_code, data = await self._request(topic, OBSTACLES_AVOID_API["SWITCH_GET"])
+            get_code, data = await self._request(topic, OBSTACLES_AVOID_API["SWITCH_GET"], timeout=AVOID_TIMEOUT_S)
             if get_code != 0:
                 raise RuntimeError(f"OBSTACLES_AVOID SWITCH_GET refused: code={get_code}")
             enabled = json.loads(data["data"])["enable"]

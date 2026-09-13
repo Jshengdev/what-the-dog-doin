@@ -177,7 +177,7 @@ class H(BaseHTTPRequestHandler):
                     problems = check_path(m["path"], m.get("rooms", []))
                     if problems:
                         raise ValueError("the path cannot be followed: " + "; ".join(problems))
-                    out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
+                    out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)), avoid=bool(body.get("avoid", True)))}
                 elif u.path == "/dog/avoid":          # {on: true|false}: the dog's own obstacle avoidance, read back
                     out = {"avoid": s.avoid(bool(body.get("on", True)))}
                 elif u.path == "/dog/mark":           # {look?, say?}: a stop with its action at the current believed position, while recording
