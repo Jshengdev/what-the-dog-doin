@@ -1,0 +1,112 @@
+"""The ears. A wake phrase from a housemate arms the dog for a window; while armed, messages are matched against the
+command list and run. Every wake, command, ack, and result is a ledger row; every post goes through the gate and the
+never-twice claim keyed on the message that caused it."""
+from __future__ import annotations
+import time
+from typing import Any, Callable
+
+from .. import commands as cmds
+from ..ledger import append, log
+from . import db, memory
+from .housemates import HOUSEMATES, name as hname
+from .triggers import commands as command_list, is_wake, match_command, wake_phrases
+
+Poster = Callable[[str, str, str, str | None, str | None], Any]   # (guid, trigger_key, kind, text, file)
+
+
+class Listener:
+    def __init__(self, guid: str, post: Poster, listen_s: float = 120.0, dry_run: bool = False):
+        self.guid, self.post, self.listen_s, self.dry = guid, post, listen_s, dry_run
+        self.armed_until = 0.0
+        self.armed_by: str | None = None
+        self.last = db.max_rowid()          # no replay at boot
+        self._warned = False
+
+    @property
+    def armed(self) -> bool:
+        return time.time() < self.armed_until
+
+    def allowed(self, m: dict[str, Any]) -> bool:
+        if m["is_from_me"]:
+            return False
+        if not HOUSEMATES:
+            if not self._warned:
+                log("chat", "WARN HOUSEMATES is empty: any member of the group may wake the dog")
+                self._warned = True
+            return True
+        return m["sender"] in HOUSEMATES
+
+    def say(self, key: str, text: str | None, file: str | None = None) -> None:
+        if self.dry:
+            log("chat", f"DRY would post [{key}]: {text}", file=file or "")
+            return
+        self.post(self.guid, key, "listen", text, file)
+
+    def _event(self, tool: str, m: dict[str, Any], **extra: Any) -> None:
+        append({"step": tool, "agent": "central", "tool": tool, "app": "imessage", "ok": True,
+                "args": {"from": m["sender"], "text": (m["text"] or "")[:200], "guid": m["guid"], **extra},
+                "state_before": None, "state_after": {"armed": self.armed, "armed_by": self.armed_by},
+                "response_or_error": None, "latency_ms": 0})
+
+    def handle(self, m: dict[str, Any]) -> None:
+        text = m["text"]
+        if not text or not self.allowed(m):
+            return
+        wake = is_wake(text)
+        if not self.armed:
+            if not wake:
+                return
+            self.armed_until = time.time() + self.listen_s
+            self.armed_by = m["sender"]
+            log("chat", "WAKE", by=hname(m["sender"]), phrase=wake[0], score=wake[1])
+            self._event("chat.wake", m, phrase=wake[0], score=wake[1])
+            self.say(f"wake:{m['guid']}", f"listening for {int(self.listen_s)}s. say one of: {' · '.join(command_list())}")
+            return
+        hit = match_command(text)
+        if not hit:
+            if wake:
+                self.armed_until = time.time() + self.listen_s
+            log("chat", "armed, no command in message", by=hname(m["sender"]), chars=len(text))
+            return
+        cmd, score = hit
+        log("chat", "COMMAND", by=hname(m["sender"]), command=cmd, score=score)
+        self._event("chat.command", m, command=cmd, score=score)
+        if cmd == "stop":
+            self.armed_until = 0.0
+            self.armed_by = None
+            self.say(f"stop:{m['guid']}", "ok, done listening")
+            return
+        self.armed_until = time.time() + self.listen_s
+        self.say(f"ack:{m['guid']}", f"on it: {cmd}")
+        try:
+            out = cmds.run(cmd)
+        except Exception as e:  # noqa: BLE001  (reported truthfully to the group; the ledger row already has it)
+            self.say(f"res:{m['guid']}", f"couldn't {cmd}: {type(e).__name__}: {str(e)[:120]}")
+            return
+        if isinstance(out, dict):
+            self.say(f"res:{m['guid']}", out.get("text"), out.get("file"))
+        else:
+            self.say(f"res:{m['guid']}", str(out)[:300])
+
+    def poll(self) -> int:
+        if self.armed_by and not self.armed:
+            log("chat", "disarmed (timeout)", was=hname(self.armed_by))
+            self.armed_by = None
+        msgs = db.new_messages(self.guid, self.last)
+        if not msgs:
+            return 0
+        memory.store(self.guid, msgs)
+        self.last = msgs[-1]["rowid"]
+        memory.set_kv("last_rowid", str(self.last))
+        for m in msgs:
+            self.handle(m)
+        return len(msgs)
+
+    def run(self, every: float = 2.0, once: bool = False) -> None:
+        log("chat", f"listen guid={self.guid}", from_rowid=self.last, listen_s=self.listen_s, dry=self.dry,
+            wake_phrases=len(wake_phrases()), commands=len(command_list()))
+        while True:
+            self.poll()
+            if once:
+                break
+            time.sleep(every)
