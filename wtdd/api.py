@@ -7,6 +7,7 @@
   POST /tools/<name>  {args}      {ok, tool, args, result}, or 500 {ok: false, tool, args, error}
   GET  /ledger?n=25               the last n ledger rows (the page polls this every 2 s)
   GET  /field                     the running walk's position, room, levels and stop from <repo>/field.json, {} when idle (polled at 10 Hz)
+  GET  /chat                      the listener's heartbeat (<repo>/listen.json, written every poll): alive, armed, the gated group's name
   GET  /evals                     <repo>/evals.json, every scenario's newest trials (python -m wtdd.evals --write)
   GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms and the intruder flag
   POST /intruder {on}             arm/disarm the intruder watch (<repo>/intruder.on; python -m wtdd.watch sounds intruder_alarm)
@@ -80,6 +81,13 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
         if u.path == "/field":
             return self._json(200, json.loads(FIELD.read_text()) if FIELD.exists() else {})
+        if u.path == "/chat":   # the listener's heartbeat (<repo>/listen.json) plus the gated group's name
+            f = ROOT / "listen.json"
+            d = json.loads(f.read_text()) if f.exists() else {}
+            age = round(time.time() - d["t"], 1) if d.get("t") else None
+            from .chat.send import TARGET_NAME
+            return self._json(200, {"alive": age is not None and age < 10, "age_s": age, "armed": d.get("armed"), "armed_by": d.get("armed_by"),
+                                    "pending": d.get("pending"), "group": TARGET_NAME})
         if u.path == "/evals":
             f = ROOT / "evals.json"
             return self._json(200, json.loads(f.read_text()) if f.exists() else {})

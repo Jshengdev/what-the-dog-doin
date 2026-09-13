@@ -39,6 +39,8 @@
   .strip-line { stroke: #262323; stroke-width: 10; stroke-linecap: round; cursor: grab; } .strip-glow { stroke: #ffcc44; stroke-width: 24; stroke-linecap: round; }
   .handle { fill: #fff; stroke: #262323; stroke-width: 2; cursor: grab; }
   .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; cursor: grab; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
+  .st { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #fff; box-shadow: 0 0 0 1px rgba(38,35,35,.1); }
+  .st i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #b2382e; } .st.on i { background: #2f7d4f; } .st.warn i { background: #d9a400; }
   .cone { fill: rgba(232,89,12,.14); stroke: rgba(232,89,12,.6); stroke-width: 2; } .conetip { fill: #fff; stroke: #e8590c; stroke-width: 3; cursor: grab; }
   .trace { fill: none; stroke: #e8590c; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: .8; } .mark { fill: #e8590c; stroke: #fff; stroke-width: 2; }
   .lidar { fill: none; stroke: rgba(11,13,196,.5); stroke-width: 6; stroke-linecap: round; pointer-events: none; }   /* one dot per "M x y h0" */
@@ -95,7 +97,9 @@ function App() {
   const drag = useRef(null); const moved = useRef(false);
   const svgRef = useRef(null);
 
-  useEffect(() => { fetch("/map").then(r => r.json()).then(setMap); call("lights_status").then(o => o.ok && setStatus(o.result)); }, []);
+  useEffect(() => { fetch("/map").then(r => r.json()).then(setMap); const f = () => call("lights_status").then(o => setStatus(o.ok ? o.result : { error: o.error })); f(); const t = setInterval(f, 60000); return () => clearInterval(t); }, []);   // the lights read back every minute
+  const [chat, setChat] = useState(null);   // GET /chat: the listener's heartbeat
+  useEffect(() => { const f = () => fetch("/chat").then(r => r.json()).then(setChat).catch(() => setChat(null)); f(); const t = setInterval(f, 3000); return () => clearInterval(t); }, []);
   useEffect(() => { const t = setInterval(() => fetch("/ledger?n=150").then(r => r.json()).then(setLedger), 2000); return () => clearInterval(t); }, []);   // 150: the eye panel looks back past a walk's writes; receipts show the newest 25
 
   const run = async (name, args) => { setBusy(name); const out = await call(name, args); setLast(out); setBusy(null); if (name === "lights_status" && out.ok) setStatus(out.result); return out; };
@@ -182,6 +186,19 @@ function App() {
 
   return html`<div class="wrap">
     <div class="top"><h1>what the dog doin <span class="mono">· ${admin ? "admin" : "demo"}</span></h1><span class="mono"><span class="live">live</span> · python -m wtdd.api · every button is one file in wtdd/tools · <a href=${admin ? "#" : "#admin"} style=${{ color: "inherit" }}>${admin ? "demo view" : "admin view"}</a></span></div>
+    <div class="row" style=${{ margin: "0 0 12px" }}>
+      ${(() => {
+        const st = dog?.state, age = st?.age_ms;
+        const dogOn = dog?.connected && age != null && age < 2000, dogStale = dog?.connected && !dogOn;
+        const hueOk = status && !status.error && Array.isArray(status.hue), stripOk = status && status.strip && !status.strip.error;
+        const chatOn = chat?.alive;
+        return html`
+          <span class=${"st " + (dogOn ? "on" : dogStale ? "warn" : "")}><i></i>dog ${dogOn ? `on · ${st.hz} Hz · ${dog.calibrated ? "located" : "not located"}${dog.avoid ? " · avoid on" : ""}` : dogStale ? `stale · last state ${Math.round(age / 1000)} s ago` : "off"}</span>
+          <span class=${"st " + (hueOk && stripOk ? "on" : hueOk || stripOk ? "warn" : "")}><i></i>lights ${status ? `${hueOk ? `hue ${status.hue.filter(l => l.room === "Living room").length} read back` : "hue: no answer"} · ${stripOk ? `strip ${status.strip.on ? "on" : "off"}` : "strip: no answer"}` : "reading…"}</span>
+          <span class=${"st " + (chatOn ? "on" : "")}><i></i>group chat ${chat ? (chatOn ? `${chat.group} · listening${chat.armed ? ` · armed by ${chat.armed_by || "?"}` : ""}${chat.pending ? " · waiting for who dis" : ""}` : `listener not running (last beat ${chat.age_s ?? "never"} s ago)`) : "…"}</span>
+          <span class=${"st " + (watch && watch.age_ms != null && watch.age_ms < 3000 ? "on" : "")}><i></i>detector ${watch && watch.age_ms != null && watch.age_ms < 3000 ? `live · ${watch.ms} ms` : "off"}${watch?.intruder ? " · intruder watch armed" : ""}</span>`;
+      })()}
+    </div>
     <div class="grid">
       <div>
         <div class="panel">

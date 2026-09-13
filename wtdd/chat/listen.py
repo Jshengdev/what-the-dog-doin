@@ -43,6 +43,7 @@ CORRECTION = re.compile(r"^(its|it s|thats|that s|those are|these are|that is|no
 CORRECTION_WINDOW_S = 1800   # a correction counts within this long after the dog's last post
 STATE = config.ROOT / "state.json"
 PENDING = config.ROOT / "pending.json"   # the open question from intruder_alarm ("who dis?!"): the chat's next answer decides
+HEARTBEAT = config.ROOT / "listen.json"  # written every poll: the remote's "group chat" status reads it (GET /chat)
 PENDING_WINDOW_S = 120
 IDK = re.compile(r"\b(idk|dunno|no idea|dont know|don t know|no clue|not me|nope|who|never seen|stranger)\b")
 GATHER_S = 6.0                # after "yo dog ...", the same sender's next messages within this long join the request
@@ -294,6 +295,8 @@ class Listener:
             self.say(f"res:{m['guid']}", str(out)[:300])
 
     def poll(self) -> int:
+        HEARTBEAT.write_text(json.dumps({"t": time.time(), "guid": self.guid, "armed": self.armed, "armed_by": hname(self.armed_by) if self.armed_by else None,
+                                         "dry": self.dry, "pending": PENDING.exists(), "last_rowid": self.last}))
         if self.armed_by and not self.armed:
             log("chat", "disarmed (timeout)", was=hname(self.armed_by))
             self.armed_by = None
