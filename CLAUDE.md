@@ -94,7 +94,7 @@ This section is the 25%. It is built alongside the agent, not after it.
 
 **Receipts.** Every agent step appends one record to a ledger: step name, inputs, the external app and operation, the response (or the error), latency, timestamp. Append-only, file-backed (JSONL is enough), never rewritten. The demo shows the ledger next to the result. The reliability brief cites it.
 
-**Pass, fail, unsafe.** The judges' own published benchmark (ArgaBench, see `docs/JUDGES.md`) grades every trial from trusted before-and-after state as **pass**, **fail**, or **unsafe**, where unsafe means the agent performed a prohibited mutation. Grade ourselves the same way. Keep an explicit prohibited-actions list (never message the group without a gate, never touch a device that was not asked for, never act twice on one request) and assert it from app and device state after every run. Run each scenario more than once. "It worked once" is not a result.
+**Pass, fail, unsafe.** The judges' own published benchmark (ArgaBench; the judge notes from the build night are at `git show df77344:docs/JUDGES.md`) grades every trial from trusted before-and-after state as **pass**, **fail**, or **unsafe**, where unsafe means the agent performed a prohibited mutation. Grade ourselves the same way. Keep an explicit prohibited-actions list (never message the group without a gate, never touch a device that was not asked for, never act twice on one request) and assert it from app and device state after every run. Run each scenario more than once. "It worked once" is not a result.
 
 **Evals.** A small fixed set of scenarios (three to five is plenty) that run the agent end to end and score pass or fail per step, with the failure named. The scenarios are the demo path plus the ways it breaks. Where possible, commit the eval failing first, then make it pass. A check that has never failed has never checked anything.
 
@@ -146,7 +146,7 @@ Hackathon failures are silent: an app call that 401s and the agent shrugs, a ste
 
 **Johnny Sheng**, technical founder. Thinks in systems and wants abstraction grounded in first principles. Values: math over prompts, verbatim over vibes, tested quality over spec compliance, dynamic over hardcoded. Avoid fallbacks. Lean on logs and console output to find bugs. Casual, moves fast, trusts the process.
 
-**Johnny names the agent. This file does not.** Until `docs/SCOPE-LOCK.md` is filled, your job is to sharpen his idea, not replace it: reflect it back tighter, surface the gaps, and ask *what would have to be true, what test would falsify it, what is the smallest version that proves it.* Once the lock is in, switch to build mode and execute his idea.
+**Johnny names the agent. This file does not.** Until the idea is locked (it was, on 2026-09-13; the draft lives at `git show df77344:docs/SCOPE-LOCK.md`), your job is to sharpen his idea, not replace it: reflect it back tighter, surface the gaps, and ask *what would have to be true, what test would falsify it, what is the smallest version that proves it.* Once the lock is in, switch to build mode and execute his idea.
 
 Under hackathon pressure he wants the agent working first. When you cut a corner, cut it as an engineered half-half (§2), never a silent fake, and write the cut into the reliability brief.
 
@@ -154,7 +154,7 @@ Under hackathon pressure he wants the agent working first. When you cut a corner
 
 ## 7. Workflow (day of)
 
-1. Read `docs/SCOPE-LOCK.md`. Name the demo path: trigger, steps across apps, result, receipts.
+1. Read `README.md` ("What it does: the round"). Name the demo path: trigger, steps across apps, result, receipts.
 2. Wire the riskiest app first. Get one real call through it. Log it.
 3. Climb the ladder (§1) to the smallest build that gets one real run through all three apps.
 4. Run it for real. Read the ledger. No mocks on the demo path.

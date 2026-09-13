@@ -25,7 +25,8 @@ The trigger is a real text in the housemates' iMessage group (THE CASTLE), read 
 | 6 | a person in the frame: "yo, we don't know this guy", then the living room strobes red and blue and the strip goes to 100 | iMessage, Hue, Tuya | `light_alarm`, post `alarm:<guid>:<stop>` | `chat.post`, `lights.signal` per light, `lights.tuya_set` |
 | 7 | "dog done", with any failure named in the message | iMessage (write) | post `done:<guid>` | `chat.post` |
 | 8 | a housemate corrects it ("that's socks, not a bird"): acknowledged with "noted: …", recorded against the exact post it corrects, and carried into the next look's prompt | iMessage (read + write) | `wtdd/chat/listen.py` correction(), `state.json` | `chat.correction`, `chat.post` |
-| 9 | the intruder watch (armed from the remote): the detector sees a person for a few frames, the dog takes a photo, boxes it, posts "STRANGER DANGER!!!" three times with it, and the living room strobes red and blue for five seconds; at most once a minute | Unitree Go2, OpenRouter-free (the detector), iMessage, Hue, Tuya | `python -m wtdd.watch` + `intruder_alarm` | `watch.detect`, `intruder.alarm`, `dog.look`, `watch.boxes`, `chat.post`, `lights.signal` x4, `lights.tuya_set` |
+| 9 | the intruder watch (armed from the remote): the detector sees a person for a few frames, the dog takes a photo, boxes it, and asks the group "who dis?!" with it. The group's next answer decides: "idk" and its kin mean "STRANGER DANGER!!!" three times and the living room strobing red and blue for five seconds; anything else, "ok, standing down"; no answer in two minutes, stood down quietly. At most once a minute | Unitree Go2, the detector, iMessage, Hue, Tuya | `python -m wtdd.watch` + `intruder_alarm` + `wtdd/chat/listen.py` verdict() | `watch.detect`, `intruder.alarm`, `dog.look`, `watch.boxes`, `chat.post`, `intruder.verdict`, `lights.signal` x4, `lights.tuya_set` |
+| 10 | a chat turn: "yo dog …" (or "hey dog", "dog …") is answered once by the model from the group's context (who said what, what the dog did and reported, the corrections), reading that sender's next six seconds of messages as part of the ask. Nothing else in the chat is answered; only "what the dog doin" and its variations start the round | iMessage, OpenRouter | `wtdd/chat/listen.py` chat(), `wtdd/agent.py` | `chat.ask`, `llm.generate`, `chat.post` |
 
 **Where it thinks it is.** The Go2's Wi-Fi driver exposes no navigation, so the map knowledge is ours: one calibration ties the dog's odometry (20 Hz, drifts) to a map point and heading (`wtdd/dog/nav.py`, 108.5 px per metre). On the remote the dog is an orange dot with a cone for where it points; drag the dot to where it really is, drag the cone tip to where it looks, and that is a `dog.calibrate` row. **Teach the route by driving:** "record route" traces the believed position while you drive with the controller, "mark stop here" drops the stops, "stop & save route" writes the thinned trace as the map's path. **Replay:** "follow the path" drives it waypoint by waypoint (proportional steering, 0.3 m/s, avoidance on and read back first, a waypoint not reached in 30 s fails loud), pausing at each stop. A path with a point outside every room or a jump over 300 px is refused by name before anything moves. Anyone in the frame counts as a stranger: recognizing housemates is not built.
 
@@ -38,7 +39,9 @@ python -m wtdd.chat listen         # the group chat: "what the dog doin" wakes i
 python -m wtdd list                # every tool, one file each; python -m wtdd <tool> key=value runs one
 python -m wtdd dog_say             # nod, photo, sentence, posted to the castle
 python -m wtdd.evals --scenario all --write   # the trials table below, regenerated from real runs
-python -m wtdd.watch               # the detector over the live camera: boxes and counts on the remote
+python -m wtdd.watch               # the detector over the live camera: boxes and counts on the remote; the intruder watch when armed
+# .env flags for a round: WTDD_ROUND=dog (the dog drives the recorded route; entity = simulated walk, dog hand-driven),
+# WTDD_ALARM=1 (a person at a stop sounds the alarm), WTDD_AGENT=0 (no replies to chatter), WTDD_HOUSEMATE_NAMES=teri
 python -m wtdd.evals --scenario follow --n 3   # the dog replays the recorded route on its own, graded from dog.follow rows
 python -m wtdd ask "dim the living room and make the strip warm"   # the model picks the tools
 ```
@@ -76,7 +79,7 @@ Two models, both through OpenRouter (`wtdd/llm.py`, no retries, no fallback mode
 
 ### Receipts
 
-`ledger.jsonl` at the repo root, append-only, one row per step from every process, never rewritten. Row keys: `ts, run_id, step, agent, tool, app, args, ok, response_or_error, state_before, state_after, latency_ms, cached, source`. `python -m wtdd ledger_tail n=20` prints the tail; the remote polls `GET /ledger` every 2 s. One real row, the newest confirmed post to the castle (regenerate: `grep '"tool": "chat.post"' ledger.jsonl | tail -1`):
+`ledger.jsonl` at the repo root, append-only, one row per step from every process, never rewritten. It is not committed (it holds the housemates' message ids and numbers); `docs/evidence/` carries the day's trials as run (`trials-2026-09-13.json`, the same rows the table below is built from) and a sanitized sample of the rows behind them (`ledger-sample-2026-09-13.jsonl`: senders, ids and home paths removed, nothing else changed). Row keys: `ts, run_id, step, agent, tool, app, args, ok, response_or_error, state_before, state_after, latency_ms, cached, source`. `python -m wtdd ledger_tail n=20` prints the tail; the remote polls `GET /ledger` every 2 s. One real row, the newest confirmed post to the castle (regenerate: `grep '"tool": "chat.post"' ledger.jsonl | tail -1`):
 
 ```json
 {
