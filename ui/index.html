@@ -40,6 +40,7 @@
   .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; cursor: grab; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
   .cone { fill: rgba(232,89,12,.14); stroke: rgba(232,89,12,.6); stroke-width: 2; } .conetip { fill: #fff; stroke: #e8590c; stroke-width: 3; cursor: grab; }
   .trace { fill: none; stroke: #e8590c; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: .8; } .mark { fill: #e8590c; stroke: #fff; stroke-width: 2; }
+  .lidar { fill: none; stroke: rgba(11,13,196,.5); stroke-width: 6; stroke-linecap: round; pointer-events: none; }   /* one dot per "M x y h0" */
   .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 17px; fill: #262323; paint-order: stroke; stroke: #fbfaf7; stroke-width: 5px; user-select: none; pointer-events: none; }
   .levels { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; }
   .bar { display: inline-block; height: 7px; background: #ffcc44; border-radius: 4px; vertical-align: middle; margin-left: 8px; transition: width .2s; }
@@ -105,6 +106,8 @@ function App() {
   const [live, setLive] = useState(null);   // the dog's camera: GET /dog/frame.jpg, self-paced, only while connected
   const next = ms => setTimeout(() => setLive(`${API}/dog/frame.jpg?t=${Date.now()}`), ms);
   useEffect(() => { if (dog?.connected && !live) next(0); if (dog && !dog.connected && live) setLive(null); }, [dog]);
+  const [lidar, setLidar] = useState(null);   // GET /dog/lidar: the dog's LiDAR band on the map, polled every 500 ms only while connected
+  useEffect(() => { if (!dog?.connected) { setLidar(null); return; } const t = setInterval(() => fetch(`${API}/dog/lidar`).then(r => r.json()).then(setLidar).catch(() => {}), 500); return () => clearInterval(t); }, [dog?.connected]);
   const keys = useRef(new Set()); const driveTimer = useRef(null);
   const VEL = { w: [0.3, 0, 0], s: [-0.3, 0, 0], a: [0, 0.3, 0], d: [0, -0.3, 0], q: [0, 0, 0.5], e: [0, 0, -0.5] };
   const post = (path, body) => fetch(`${API}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -210,6 +213,7 @@ function App() {
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
             ${dog?.rec && html`<g><polyline class="trace" points=${dog.rec.points.map(p => p.join(",")).join(" ")}/>${dog.rec.marks.map((m, i) => html`<circle key=${"m" + i} class="mark" cx=${m[0]} cy=${m[1]} r="10"/>`)}</g>`}
+            ${lidar?.points_px?.length > 0 && html`<path class="lidar" d=${lidar.points_px.map(p => `M${p[0]} ${p[1]}h0`).join("")}/>`}
             ${(dogDrag || dog?.map) && (() => {
               const D = dogDrag || dog.map, [x, y] = D.p, h = D.heading_deg * Math.PI / 180, L = 170, half = 0.5;   // the cone: where it points, about 60 degrees wide
               const a = [x + L * Math.cos(h - half), y + L * Math.sin(h - half)], b = [x + L * Math.cos(h + half), y + L * Math.sin(h + half)], tip = [x + L * Math.cos(h), y + L * Math.sin(h)];
@@ -236,9 +240,10 @@ function App() {
             <button class=${"small" + (dog?.rec ? " on" : "")} disabled=${!dog?.calibrated} title="drive it with the controller; the trace of where it thinks it is becomes the route" onClick=${() => post("/dog/record", { on: !dog?.rec }).then(r => r.json()).then(o => { setLast(o); if (o.ok && o.rec && !o.rec.active) fetch("/map").then(r => r.json()).then(setMap); })}>${dog?.rec ? `stop & save route (${dog.rec.n} pts)` : "record route"}</button>
             ${dog?.rec && html`<button class="small" onClick=${() => post("/dog/mark", {}).then(r => r.json()).then(setLast)}>mark stop here (${dog.rec.marks.length})</button>`}
             <button class=${"small" + (dog?.avoid ? " on" : "")} disabled=${!dog?.connected} title="the dog's own obstacle avoidance; velocities go through it while on" onClick=${() => post("/dog/avoid", { on: !dog?.avoid }).then(r => r.json()).then(setLast)}>${dog?.avoid ? "avoid on" : "avoid off"}</button>
+            <button class=${"small" + (lidar?.on ? " on" : "")} disabled=${!dog?.connected} title="the dog's own LiDAR (rt/utlidar/voxel_map_compressed) drawn on the map through the calibration" onClick=${() => post("/dog/lidar", { on: !lidar?.on }).then(r => r.json()).then(setLast)}>${lidar?.on ? "lidar on" : "lidar off"}</button>
             <button class=${"small" + (dog?.follow?.active ? " on" : "")} disabled=${!dog?.calibrated || dog?.follow?.active} onClick=${() => post("/dog/follow", {}).then(r => r.json()).then(setLast)}>follow the path</button>
             <button class="small" disabled=${dog?.follow?.stopped_at == null} onClick=${() => post("/dog/resume", {}).then(r => r.json()).then(setLast)}>resume</button>
-            <span class="mono">${dog?.recheck ? html`<span class="bad">reconnected: drag the dog to where it really is · </span>` : ""}${dog?.map ? `thinks: ${dog.map.p[0]}, ${dog.map.p[1]} · ${dog.map.heading_deg}°` : "not calibrated"}${dog?.follow?.active ? ` · wp ${dog.follow.i}/${dog.follow.n - 1} · ${dog.follow.dist_px ?? "?"} px · ${dog.follow.err_deg ?? "?"}°${dog.follow.stopped_at != null ? ` · stopped at ${dog.follow.stopped_at}` : ""}` : dog?.follow?.error ? ` · follow: ${dog.follow.error}` : dog?.follow?.done ? ` · followed ${dog.follow.reached.length} waypoints` : ""}</span>
+            <span class="mono">${dog?.recheck ? html`<span class="bad">reconnected: drag the dog to where it really is · </span>` : ""}${dog?.map ? `thinks: ${dog.map.p[0]}, ${dog.map.p[1]} · ${dog.map.heading_deg}°` : "not calibrated"}${dog?.follow?.active ? ` · wp ${dog.follow.i}/${dog.follow.n - 1} · ${dog.follow.dist_px ?? "?"} px · ${dog.follow.err_deg ?? "?"}°${dog.follow.stopped_at != null ? ` · stopped at ${dog.follow.stopped_at}` : ""}` : dog?.follow?.error ? ` · follow: ${dog.follow.error}` : dog?.follow?.done ? ` · followed ${dog.follow.reached.length} waypoints` : ""}${lidar?.on ? ` · lidar ${lidar.frame?.id ?? "?"} · ${lidar.n} frames · ${(lidar.points_px || []).length} pts${lidar.why ? ` · ${lidar.why}` : ""}` : ""}</span>
           </div>
           <div class="row"><button class="key" disabled=${busy !== null} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button><button disabled=${busy !== null} onClick=${() => lookShot("level")}>level photo</button><button disabled=${busy !== null} onClick=${() => lookShot("sit")}>sit photo</button>
             ${cmd("sit", "dog_cmd", { name: "Sit" })}${cmd("stand", "dog_cmd", { name: "RiseSit" })}${cmd("hello", "dog_cmd", { name: "Hello" })}

@@ -30,6 +30,9 @@ its go2 examples sportmode, sportmodestate, obstacles_avoid, camera_stream).
   camera:     conn.video.add_track_callback(cb) then conn.video.switchVideoChannel(True); the driver discards
               frame 1 and awaits the callback with the live track. PIL via av; never import cv2 in this process,
               the av and cv2 wheels both bundle libavdevice and clash.
+  lidar:      wtdd/dog/lidar.py (lidar_on/lidar_off/lidar_points here): disableTrafficSaving(True), set_decoder("native"),
+              "on" to rt/utlidar/switch, subscribe rt/utlidar/voxel_map_compressed; frames arrive LZ4-decoded as meters
+              in the voxel frame. Not yet run on this dog.
   auth:       firmware 1.1.15+ needs aes_128_key, fetched once with
               `unitree-fetch-aes-key --email <unitree account> --password '...' --device-type Go2`.
   discovery:  discover_ip_sn() is multicast 231.1.1.1:10131; a dog in STA mode on another subnet does not answer.
@@ -51,11 +54,13 @@ import asyncio
 import hashlib
 import io
 import json
+import math
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from unitree_webrtc_connect import (
     RTC_TOPIC,
     SPORT_CMD,
@@ -68,6 +73,7 @@ from unitree_webrtc_connect.unitree_auth import _probe_tcp_port
 
 from .. import config
 from ..ledger import log, step
+from . import lidar
 
 try:
     from unitree_webrtc_connect.constants import OBSTACLES_AVOID_API
@@ -238,6 +244,12 @@ class Body:
         self._fr_at = 0.0
         self._vid_t0 = 0.0
         self._video = False
+        self._lidar: dict | None = None   # newest decoded voxel frame (wtdd/dog/lidar.py decode), None until the first
+        self._lidar_n = 0
+        self._lidar_err = 0
+        self._lidar_at = 0.0
+        self._lidar_on = False
+        self._utpose: dict | None = None  # newest rt/utlidar/robot_pose data, raw (shape UNVERIFIED; for the frame check)
 
     # ---- connection
 
@@ -495,6 +507,61 @@ class Body:
             r["response_or_error"] = {"done": len(done), "of": len(plan)}
             r["state_after"] = await self.fresh_state()
         return done
+
+    # ---- lidar (wtdd/dog/lidar.py)
+
+    async def lidar_on(self) -> None:
+        """The dog's LiDAR voxel stream on, once per connection; decoded frames land in _on_lidar, the newest is kept."""
+        if self._lidar_on:
+            return
+        await lidar.subscribe(self.conn, self._on_lidar, self._on_utpose)
+        self._lidar_on = True
+
+    async def lidar_off(self) -> None:
+        if not self._lidar_on:
+            return
+        lidar.unsubscribe(self.conn)
+        self._lidar_on = False
+        log("dog", "lidar off", frames=self._lidar_n, errors=self._lidar_err)
+
+    def _on_lidar(self, message: dict) -> None:
+        """Runs inside the driver's message handler. A frame that fails to decode is counted, logged and re-raised (the
+        driver prints the traceback); nothing stands in for it. The first frame logs its shape, its z layers and how far
+        the window's center is from the LF_SPORT_MOD_STATE position (the frame check in lidar.py's docstring)."""
+        try:
+            d = lidar.decode(message)
+        except Exception as e:  # noqa: BLE001  (counted and re-raised; lidar_points() reports the count)
+            self._lidar_err += 1
+            log("dog", "WARN lidar frame rejected", err=f"{type(e).__name__}: {str(e)[:120]}", errors=self._lidar_err)
+            raise
+        now = time.monotonic()
+        if self._lidar_n == 0:
+            pos = (self.state() or {}).get("position") or [0.0, 0.0, 0.0]
+            off = math.hypot(d["center"][0] - float(pos[0]), d["center"][1] - float(pos[1]))
+            z = d["points"][:, 2]
+            layers = {round(float(k), 2): int(c) for k, c in zip(*np.unique(z, return_counts=True))} if len(z) else {}
+            log("dog", f"first lidar frame frame_id={d['frame']}", voxels=d["n"], width=d["width"], res=d["resolution"],
+                origin=[round(v, 2) for v in d["origin"]], center=[round(v, 2) for v in d["center"]],
+                odom_pos=[round(float(v), 2) for v in pos[:3]], center_vs_odom_m=round(off, 2), z_layers=layers)
+            if off > 1.0:
+                log("dog", "WARN lidar window center is far from the LF_SPORT_MOD_STATE position: the voxel frame may not be that odometry",
+                    center_vs_odom_m=round(off, 2), frame_id=d["frame"], utlidar_pose=str(self._utpose)[:160])
+        self._lidar, self._lidar_n, self._lidar_at = d, self._lidar_n + 1, now
+        if self._lidar_n % 100 == 0:
+            log("dog", f"lidar frames={self._lidar_n}", voxels=d["n"], errors=self._lidar_err)
+
+    def _on_utpose(self, message: dict) -> None:
+        self._utpose = message.get("data")
+
+    def lidar_points(self) -> dict:
+        """The newest decoded voxel frame and the counts: {on, n (frames), errors, age_ms, frame (None until the first:
+        id, stamp, origin, resolution, width, center, voxels), points (float64 (N, 3) meters or None), utlidar_pose}."""
+        d = self._lidar
+        return {"on": self._lidar_on, "n": self._lidar_n, "errors": self._lidar_err,
+                "age_ms": round((time.monotonic() - self._lidar_at) * 1000) if d else None,
+                "frame": {"id": d["frame"], "stamp": d["stamp"], "origin": d["origin"], "resolution": d["resolution"],
+                          "width": d["width"], "center": d["center"], "voxels": d["n"]} if d else None,
+                "points": d["points"] if d else None, "utlidar_pose": self._utpose}
 
     # ---- camera
 
