@@ -25,6 +25,7 @@ The trigger is a real text in the housemates' iMessage group (THE CASTLE), read 
 | 6 | a person in the frame: "yo, we don't know this guy", then the living room strobes red and blue and the strip goes to 100 | iMessage, Hue, Tuya | `light_alarm`, post `alarm:<guid>:<stop>` | `chat.post`, `lights.signal` per light, `lights.tuya_set` |
 | 7 | "dog done", with any failure named in the message | iMessage (write) | post `done:<guid>` | `chat.post` |
 | 8 | a housemate corrects it ("that's socks, not a bird"): acknowledged with "noted: …", recorded against the exact post it corrects, and carried into the next look's prompt | iMessage (read + write) | `wtdd/chat/listen.py` correction(), `state.json` | `chat.correction`, `chat.post` |
+| 9 | the intruder watch (armed from the remote): the detector sees a person for a few frames, the dog takes a photo, boxes it, posts "STRANGER DANGER!!!" three times with it, and the living room strobes red and blue for five seconds; at most once a minute | Unitree Go2, OpenRouter-free (the detector), iMessage, Hue, Tuya | `python -m wtdd.watch` + `intruder_alarm` | `watch.detect`, `intruder.alarm`, `dog.look`, `watch.boxes`, `chat.post`, `lights.signal` x4, `lights.tuya_set` |
 
 **Where it thinks it is.** The Go2's Wi-Fi driver exposes no navigation, so the map knowledge is ours: one calibration ties the dog's odometry (20 Hz, drifts) to a map point and heading (`wtdd/dog/nav.py`, 108.5 px per metre). On the remote the dog is an orange dot with a cone for where it points; drag the dot to where it really is, drag the cone tip to where it looks, and that is a `dog.calibrate` row. **Teach the route by driving:** "record route" traces the believed position while you drive with the controller, "mark stop here" drops the stops, "stop & save route" writes the thinned trace as the map's path. **Replay:** "follow the path" drives it waypoint by waypoint (proportional steering, 0.3 m/s, avoidance on and read back first, a waypoint not reached in 30 s fails loud), pausing at each stop. A path with a point outside every room or a jump over 300 px is refused by name before anything moves. Anyone in the frame counts as a stranger: recognizing housemates is not built.
 
@@ -217,13 +218,14 @@ Known ceilings, stated instead of faked:
 | the round's eye: look, vision JSON, post | `wtdd/tools/dog_say.py` | `python -m wtdd dog_say` |
 | the second eye: YOLO11n boxes on the live feed, in its own process | `wtdd/watch.py` | `python -m wtdd.watch` |
 | the alarm | `wtdd/tools/light_alarm.py` | `python -m wtdd light_alarm` |
+| the stranger: photo, boxes, "STRANGER DANGER!!!", the alarm | `wtdd/tools/intruder_alarm.py` | `python -m wtdd intruder_alarm`, or armed: `POST /intruder {on}` |
 | the model in charge | `wtdd/agent.py` | `python -m wtdd ask "..."` |
 | the group chat: read, gate, never twice, the wake sequence | `wtdd/chat/` | `python -m wtdd.chat listen`, `simulate` for a dry run |
 | the body: one shared WebRTC session, drive, looks, frames | `wtdd/dog/` | `python -m wtdd.dog probe`, the remote's dog panel |
 | the lights, Hue | `wtdd/hue/` | `python -m wtdd.hue probe` |
 | the lights, strip | `wtdd/tuya/` | `python -m wtdd.tuya probe` |
 | the field: the entity walks the map, lights follow, stops pause it | `wtdd/field.py` | `python -m wtdd walk_path` |
-| the remote, one screen: map with the live dot and stops, dog panel with the live camera, the eye (detector boxes, last sentence), state read back, receipts, the trials table | `wtdd/api.py`, `ui/` | `python -m wtdd.api` |
+| the remote: the demo view (map, route recording, walk, nod + photo, nod + say, intruder watch, brightness gain, camera, the eye, receipts, trials) and the admin view (`#admin`: hold-to-drive, field sliders, light placement, every command, state read back) | `wtdd/api.py`, `ui/` | `python -m wtdd.api`, `http://127.0.0.1:7788/` and `#admin` |
 | the evals | `wtdd/evals.py` | `python -m wtdd.evals` |
 | any MCP client | `wtdd/mcp_server.py` | `claude mcp add wtdd -- $PWD/.venv/bin/python -m wtdd.mcp_server` |
 | receipts | `ledger.jsonl` (gitignored) | `python -m wtdd ledger_tail n=20` |

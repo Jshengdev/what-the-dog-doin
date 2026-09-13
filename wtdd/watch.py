@@ -12,7 +12,9 @@ are not rows.
 Facts. cv2 lives here and never in the API process (its ffmpeg clashes with PyAV's). COCO names cup, bowl, bottle,
 wine glass, chair, couch, person, backpack, handbag, suitcase, laptop, cell phone, book ... and does NOT name socks,
 clothes or "out of place": the vision model in wtdd/tools/dog_say.py names those, and its trials count the misses. The
-detector is observability and a receipt, not a gate: nothing in the round acts on it. First run downloads yolo11n.pt
+detector is observability and a receipt, not a gate: the one thing that acts on it is the intruder watch: while <repo>/intruder.on exists
+(POST /intruder {on} on the API, the remote's "intruder watch" button) a person in view for HOLD frames calls the API's
+intruder_alarm tool (photo, boxes, "STRANGER DANGER!!!" to the castle, red/blue on the room), at most once every COOLDOWN_S. First run downloads yolo11n.pt
 (about 5 MB) next to the working directory. The API adds age_ms to /watch so the page hides stale boxes."""
 from __future__ import annotations
 import argparse
@@ -26,6 +28,8 @@ from .config import ROOT
 from .ledger import append, log
 
 WATCH = ROOT / "watch.json"
+ARMED = ROOT / "intruder.on"      # the intruder watch is armed while this file exists (POST /intruder {on} on the API)
+COOLDOWN_S = 60                   # at most one intruder alarm a minute
 OUT = Path("~/Pictures/wtdd/watch.jpg").expanduser()
 MODEL = "yolo11n.pt"
 CONF = 0.35
@@ -83,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     candidate: set[str] | None = None
     held = 0
     n = warned = 0
+    last_alarm = 0.0
     while True:
         try:
             if is_url:
@@ -112,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
                 last = now
             elif n % 40 == 0:
                 log("watch", f"frame {n}", n_boxes=d["n"], ms=ms)
+            if is_url and "person" in now and held >= HOLD and ARMED.exists() and time.time() - last_alarm > COOLDOWN_S:
+                last_alarm = time.time()
+                log("watch", "INTRUDER: person in view while armed, sounding the alarm", frames_held=held)
+                try:
+                    import requests
+                    r = requests.post(f"{API}/tools/intruder_alarm", json={}, timeout=120).json()
+                    log("watch", "intruder alarm " + ("done" if r.get("ok") else "FAILED"), posted=((r.get("result") or {}).get("post") or {}).get("rowid") if r.get("ok") else r.get("error", "")[:120])
+                except Exception as e:  # noqa: BLE001  (logged; the next sighting after the cooldown tries again)
+                    log("watch", f"intruder alarm FAILED: {type(e).__name__}: {str(e)[:100]}")
         except Exception as e:  # noqa: BLE001  (no dog, stale video, a bad frame: logged, then try again; never a fake box)
             if warned == 0:
                 log("watch", f"WARN no detection: {type(e).__name__}: {str(e)[:100]}")

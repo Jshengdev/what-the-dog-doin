@@ -8,7 +8,7 @@ much of it sits inside that radius, weighted toward the centre. One implementati
   strip:  the mean of that over `samples` points along its line (a graze at the edge is dim, a pass over the middle bright)
   rooms:  score *= other_room_factor when the light's room (the polygon its point sits in) is not the entity's room
 Map keys read: path (at least 2 points), stops [path indices], entity {radius_px 220, speed_px_s 60, falloff 1.6,
-other_room_factor 0.3, samples 12, min_step 4, floor 6}, lights [{id, label, kind dot|line, pts, device hue|strip}],
+other_room_factor 0.3, gain 1.0 (the near light's brightness multiplier, clipped at 100), samples 12, min_step 4, floor 6}, lights [{id, label, kind dot|line, pts, device hue|strip}],
 rooms [{name, poly}].
 lights[].room is recomputed here from the polygons, whatever the file says.
 Writes go through the registry (hue_light_set per lamp, strip_set for the strip): one thread per light and at most one
@@ -92,7 +92,7 @@ def score(light: dict[str, Any], p, ent: dict[str, Any], here: str | None) -> fl
         s = w(light["pts"][0])
     if here and light["room"] and light["room"] != here:
         s *= float(ent.get("other_room_factor", 0.3))
-    return s
+    return min(1.0, s * float(ent.get("gain", 1.0)))   # gain: how bright the near light gets (2 = twice, clipped at 100%)
 
 
 def _label(light: dict[str, Any]) -> str:

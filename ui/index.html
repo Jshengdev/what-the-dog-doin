@@ -80,6 +80,8 @@ function App() {
   const [here, setHere] = useState(null);
   const [levels, setLevels] = useState({});
   const [stopAt, setStopAt] = useState(null);
+  const [admin, setAdmin] = useState(location.hash === "#admin");   // demo view by default; #admin shows every panel
+  useEffect(() => { const f = () => setAdmin(location.hash === "#admin"); window.addEventListener("hashchange", f); return () => window.removeEventListener("hashchange", f); }, []);
   const [dogDrag, setDogDrag] = useState(null);   // the pose being dragged (dot = position, cone tip = heading); posted as a calibration on release
   const [watch, setWatch] = useState(null);      // GET /watch: the detector (python -m wtdd.watch), fresh when age_ms < 3000
   const [trials, setTrials] = useState(null);    // GET /evals: the trials table (python -m wtdd.evals --write)
@@ -128,8 +130,10 @@ function App() {
   const play = async () => {
     if (!map || playing.current || map.path.length < 2) return;
     playing.current = true;
-    const m = withRooms(map); setMap(m); await putMap(m);
-    const out = await call("walk_path"); setLast(out);
+    const m = withRooms(map); const r = await (await putMap(m)).json(); if (!r.ok) { setLast({ ...r, tool: "save map" }); playing.current = false; return; }
+    setMap({ ...m, _version: r._version });
+    const source = dog?.calibrated ? "dog" : "entity";   // the real dog drives the route when it knows where it is; else the simulated entity
+    const out = await call("walk_path", { source }); setLast(out);
     playing.current = false;
   };
   const hadDot = useRef(false);
@@ -174,13 +178,14 @@ function App() {
   const ent = map?.entity || {};
 
   return html`<div class="wrap">
-    <div class="top"><h1>what the dog doin <span class="mono">· remote</span></h1><span class="mono"><span class="live">live</span> · python -m wtdd.api · every button is one file in wtdd/tools</span></div>
+    <div class="top"><h1>what the dog doin <span class="mono">· ${admin ? "admin" : "demo"}</span></h1><span class="mono"><span class="live">live</span> · python -m wtdd.api · every button is one file in wtdd/tools · <a href=${admin ? "#" : "#admin"} style=${{ color: "inherit" }}>${admin ? "demo view" : "admin view"}</a></span></div>
     <div class="grid">
       <div>
         <div class="panel">
           <h2>the castle · first floor</h2>
           <div class="row">
-            <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2 || dot !== null}>${dot ? "walking…" : "▶ walk the path"}</button>
+            <button class="key" onClick=${play} disabled=${!map || (map.path || []).length < 2 || dot !== null}>${dot ? "walking…" : dog?.calibrated ? "▶ walk the path · the dog drives" : "▶ walk the path · simulated"}</button>
+            ${dot && html`<button onClick=${() => post("/dog/stop")}>stop</button>`}
             <button class=${mode === "path" ? "on" : ""} onClick=${() => { setMode(mode === "path" ? null : "path"); setPlacing(null); }}>${mode === "path" ? "drawing path (click to add)" : "draw path"}</button>
             ${mode === "path" && html`<button onClick=${() => setMap({ ...map, path: [], stops: [] })}>clear path</button>`}
             <button class=${mode === "here" ? "on" : ""} onClick=${() => { setMode(mode === "here" ? null : "here"); setPlacing(null); }}>${mode === "here" ? "click where the dog is" : "dog is here…"}</button>
@@ -189,6 +194,15 @@ function App() {
             ${last && last.rec && last.rec.problems?.length ? html`<span class="mono bad">recorded with problems: ${last.rec.problems.join("; ")}</span>` : ""}
             <span class="mono">${here ? `in: ${here}${stopAt != null ? ` · stopped at ${(map.stops || []).indexOf(stopAt) + 1}: looking` : ""}` : map ? `${map.path.length} path pts · ${(map.stops || []).length} stops · ${(map.lights || []).length} lights` : "loading"}</span>
           </div>
+          ${!admin && html`<div class="row tight">
+            <button class=${"small" + (dog?.rec ? " on" : "")} disabled=${!dog?.calibrated} onClick=${() => post("/dog/record", { on: !dog?.rec }).then(r => r.json()).then(o => { setLast(o); if (o.ok && o.rec && !o.rec.active) fetch("/map").then(r => r.json()).then(setMap); })}>${dog?.rec ? `stop & save route (${dog.rec.n} pts)` : "record route"}</button>
+            ${dog?.rec && html`<button class="small" onClick=${() => post("/dog/mark", {}).then(r => r.json()).then(setLast)}>mark stop here (${dog.rec.marks.length})</button>`}
+            <button class="small key" disabled=${busy !== null} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button>
+            ${cmd("nod + say to castle", "dog_say", {}, { key: true })}
+            <button class=${"small" + (watch?.intruder ? " on" : "")} title="while on, a person the detector sees for a few frames triggers the photo, STRANGER DANGER to the castle and red/blue on the room" onClick=${() => post("/intruder", { on: !watch?.intruder }).then(r => r.json()).then(setLast)}>${watch?.intruder ? "intruder watch ON" : "intruder watch off"}</button>
+            ${cmd("stranger alarm now", "intruder_alarm", {})}
+            ${map && html`<label class="k">brightness <input type="range" min="0.5" max="3" step="0.1" value=${ent.gain ?? 1} onInput=${e => setEnt("gain", +e.target.value)}/> ×${ent.gain ?? 1}</label>`}
+          </div>`}
           <div class="hint">${mode === "dot" ? `click where “${placing.label}” sits` : mode === "line" ? (pending ? "click the other end of the strip" : `click one end of “${placing.label}”`) : mode === "path" ? "click the floor to add a point at the end · click an existing point to DELETE it · leave draw mode to drag points or double-click them into stops" : mode === "here" ? "click the floor where the dog actually is (its heading is kept)" : "drag the orange dog to where it really is, drag its cone tip to where it points (released = calibrated) · drag a lamp, a strip end, or a path point · double-click a path point to toggle a stop · click a light to blink it · save"}</div>
           ${map && html`<svg ref=${svgRef} class=${"map" + (mode ? " placing" : "")} viewBox="0 0 1060 1540" onClick=${onMapClick} onPointerMove=${onMove} onPointerUp=${onUp} onPointerLeave=${onUp}>
             <image href="house.svg" x="0" y="0" width="1060" height="1540"/>
@@ -232,8 +246,8 @@ function App() {
         <div class="panel">
           <h2>the dog · body</h2>
           <div class="mono" style=${{ marginBottom: 6 }}>${dog ? (dog.connected ? `connected · mode ${dog.state?.mode ?? "?"} · pos ${(dog.state?.position || []).slice(0, 2).map(v => (+v).toFixed(2)).join(", ")} · ${dog.moving ? "moving " + dog.vel.map(v => (+v).toFixed(1)).join("/") : "still"}` : "not connected · the first command connects (about 1 s)") : "…"}</div>
-          <div class="row tight">${key("q", "Q turn ◀")}${key("w", "W ▲")}${key("e", "E turn ▶")}<span class="mono">hold a key or a button · 0.3 m/s · 0.5 rad/s</span></div>
-          <div class="row tight">${key("a", "A ◀")}${key("s", "S ▼")}${key("d", "D ▶")}<button class="small" onClick=${() => post("/dog/stop")}>stop</button></div>
+          ${admin && html`<div class="row tight">${key("q", "Q turn ◀")}${key("w", "W ▲")}${key("e", "E turn ▶")}<span class="mono">hold a key or a button · 0.3 m/s · 0.5 rad/s</span></div>
+          <div class="row tight">${key("a", "A ◀")}${key("s", "S ▼")}${key("d", "D ▶")}<button class="small" onClick=${() => post("/dog/stop")}>stop</button></div>`}
           <div class="row tight">
             <button class="small" disabled=${!map || (map.path || []).length < 2} title="the dog stands on path point 1 facing point 2" onClick=${() => post("/dog/calibrate", { p: map.path[0], toward: map.path[1] }).then(r => r.json()).then(setLast)}>at path start, facing pt 2</button>
             <button class="small" disabled=${!dog?.map || !map || (map.path || []).length < 2} title="keep the position, point the nose at the next path point ahead of the dog" onClick=${() => { const P = map.path, q = dog.map.p; let k = 0, best = 1e9; P.forEach((pt, i) => { const d = Math.hypot(pt[0] - q[0], pt[1] - q[1]); if (d < best) { best = d; k = i; } }); const nxt = P[Math.min(k + 1, P.length - 1)]; post("/dog/calibrate", { p: q, toward: nxt }).then(r => r.json()).then(setLast); }}>facing next pt</button>
@@ -274,13 +288,14 @@ function App() {
                 </div></div>` : html`<div class="hint">no look yet · python -m wtdd dog_say</div>`}`;
           })()}
         </div>
-        <div class="panel">
+        ${admin && html`<div class="panel">
           <h2>entity · the dog on the map</h2>
           <div class="hint">closer = brighter. the strip scores along its length, so a graze at its edge is dim and a pass over its middle is bright. lights in other rooms fade by the other-room factor.</div>
           ${map && html`<div class="row"><label class="k">radius <input type="range" min="60" max="500" value=${ent.radius_px} onInput=${e => setEnt("radius_px", +e.target.value)}/> ${ent.radius_px} px</label></div>
           <div class="row"><label class="k">speed <input type="range" min="20" max="300" value=${ent.speed_px_s} onInput=${e => setEnt("speed_px_s", +e.target.value)}/> ${ent.speed_px_s} px/s</label></div>
           <div class="row"><label class="k">falloff <input type="range" min="0.5" max="4" step="0.1" value=${ent.falloff} onInput=${e => setEnt("falloff", +e.target.value)}/> ${ent.falloff}</label>
-          <label class="k">other room <input type="range" min="0" max="1" step="0.05" value=${ent.other_room_factor} onInput=${e => setEnt("other_room_factor", +e.target.value)}/> ×${ent.other_room_factor}</label></div>`}
+          <label class="k">other room <input type="range" min="0" max="1" step="0.05" value=${ent.other_room_factor} onInput=${e => setEnt("other_room_factor", +e.target.value)}/> ×${ent.other_room_factor}</label>
+          <label class="k">gain <input type="range" min="0.5" max="3" step="0.1" value=${ent.gain ?? 1} onInput=${e => setEnt("gain", +e.target.value)}/> ×${ent.gain ?? 1}</label></div>`}
           <div class="levels">${(map?.lights || []).map(L => html`<div key=${L.id}><span class="name">${L.label}</span>${String(levels[L.id] || 0).padStart(3)}%<span class="bar" style=${{ width: (levels[L.id] || 0) * 1.2 + "px" }}></span></div>`)}</div>
         </div>
         <div class="panel">
@@ -307,7 +322,7 @@ function App() {
         ${status && html`<div class="panel"><h2>state · read back</h2><div class="status">
           ${status.hue.filter(l => l.room === "Living room").map(l => html`<div key=${l.id}><b>${l.name}</b> · ${l.on ? "on" : "off"} · ${l.brightness}%</div>`)}
           <div><b>strip</b> · ${status.strip.error ? status.strip.error : `${status.strip.on ? "on" : "off"} · ${status.strip.brightness_pct}% · temp ${status.strip.temp_pct}%`}</div>
-        </div></div>`}
+        </div></div>`}`}
         <div class="panel"><h2>receipts · ledger.jsonl</h2><div class="ledger">
           ${[...ledger].reverse().slice(0, 25).map((r, i) => html`<div key=${i}><span>${(r.ts || "").slice(11)}</span><span class=${r.ok ? "" : "bad"}>${r.tool}${r.ok ? "" : " FAILED"} ${r.args ? JSON.stringify(r.args).slice(0, 60) : ""}</span><span>${r.latency_ms} ms</span></div>`)}
         </div></div>

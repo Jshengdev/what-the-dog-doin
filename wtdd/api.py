@@ -8,7 +8,8 @@
   GET  /ledger?n=25               the last n ledger rows (the page polls this every 2 s)
   GET  /field                     the running walk's position, room, levels and stop from <repo>/field.json, {} when idle (polled at 10 Hz)
   GET  /evals                     <repo>/evals.json, every scenario's newest trials (python -m wtdd.evals --write)
-  GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms (python -m wtdd.watch)
+  GET  /watch                     <repo>/watch.json, the detector's newest counts and boxes plus age_ms and the intruder flag
+  POST /intruder {on}             arm/disarm the intruder watch (<repo>/intruder.on; python -m wtdd.watch sounds intruder_alarm)
   GET  /dog/state                 the shared dog session's state (+ map pose, follow status); POST /dog/drive {x,y,z}, /dog/stop
   POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
@@ -83,10 +84,10 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, json.loads(f.read_text()) if f.exists() else {})
         if u.path == "/watch":
             f = ROOT / "watch.json"
-            if not f.exists():
-                return self._json(200, {})
-            d = json.loads(f.read_text())
-            d["age_ms"] = round((time.time() - f.stat().st_mtime) * 1000)
+            d = json.loads(f.read_text()) if f.exists() else {}
+            if f.exists():
+                d["age_ms"] = round((time.time() - f.stat().st_mtime) * 1000)
+            d["intruder"] = (ROOT / "intruder.on").exists()
             return self._json(200, d)
         if u.path == "/dog/state":
             from .dog.session import DogSession
@@ -114,6 +115,15 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         u = urlparse(self.path)
+        if u.path == "/intruder":   # {on}: arm or disarm the intruder watch (python -m wtdd.watch acts on the file)
+            on = bool(self._body().get("on", True))
+            f = ROOT / "intruder.on"
+            if on:
+                f.write_text(time.strftime("%Y-%m-%dT%H:%M:%S") + "\n")
+            else:
+                f.unlink(missing_ok=True)
+            log("api", "intruder watch " + ("armed" if on else "disarmed"))
+            return self._json(200, {"ok": True, "intruder": on})
         if u.path == "/map":
             data = self._body()
             seen = data.pop("_version", None)
