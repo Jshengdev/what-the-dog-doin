@@ -50,6 +50,31 @@ All top-three teams receive guaranteed interviews with Arga Labs or Lemma AI.
 
 Official rules available before registration.
 
+## Official sources (checked 2026-09-12)
+
+- Event page: https://multiappagenthackathon.com/ (brief, schedule, rubric, prizes verbatim as above)
+- Judges page: https://multiappagenthackathon.com/judges/
+- Registration: Google Form created within Arga Labs. **Status 2026-09-12: "no longer accepting responses."** The official rules were gated behind this form and are not published on the site. If we have a copy from registering, paste it verbatim under "Official rules" below.
+- Hosts: Lemma https://www.uselemma.ai/ · Comma Capital https://comma.vc/
+- Judge companies: Arga Labs https://www.argalabs.com/ · Userlens https://userlens.io/ · Clera https://www.getclera.com/
+- Coverage: DEV Community "Dev Opportunity Radar #16" https://dev.to/devengers/dev-opportunity-radar-16-15k-ai-agent-hackathon-ai-education-fellowship-and-aws-student-rewards-4l2e (adds nothing beyond the site; notes solo or 2 to 4 people)
+
+## The judging panel
+
+| Judge | Title | Company |
+|---|---|---|
+| Ankur Dahama | Co-founder & CEO | Userlens |
+| Hai Ta | Co-founder | Userlens |
+| Phillip Li | Co-founder & CEO | Arga Labs |
+| Akira Tong | Co-founder & CTO | Arga Labs |
+| Shlok Mundhra | Founding Engineer | Clera |
+
+Deep intel on each judge, what they build, what they post, and what they will reward: `docs/JUDGES.md`.
+
+## Official rules
+
+Not public as of 2026-09-12. Paste verbatim here when obtained.
+
 ---
 
 ## Context worth knowing
