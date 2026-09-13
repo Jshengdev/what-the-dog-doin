@@ -34,7 +34,7 @@ class Listener:
             if config.maybe("WTDD_ALLOW_SELF") in (None, "0", "false", "no"):
                 return False
             text = (m.get("text") or "").lower()
-            own = m["guid"] in memory.posted_guids() or text.startswith(("the dog is doin", "on it:", "couldn't", "ok, done listening", "lights played", "living room lights", "this is fine", "did:", "listening for"))
+            own = m["guid"] in memory.posted_guids() or text.startswith(("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "ok, done listening", "lights played", "living room lights", "this is fine", "did:", "listening for"))
             return not own
         if not HOUSEMATES:
             if not self._warned:
@@ -56,22 +56,21 @@ class Listener:
                 "response_or_error": None, "latency_ms": 0})
 
     def wake_show(self, m: dict[str, Any]) -> None:
-        """The wake demo: walk the path (exactly what the remote's button does), then the picture, then the closing line.
-        Each part is a tool call and a gated post keyed on the wake message."""
+        """The wake demo, in Johnny's order: the picture, then "dog doin" as the walk starts, the walk (the same one the
+        remote's button runs), then "dog done". Each part is a tool call and a gated post keyed on the wake message."""
         from .. import tools
-        try:
-            out = tools.call("walk_path")
-            log("chat", "walked", seconds=out["seconds"], writes=out["writes"], errors=out["errors"], rooms=",".join(out["rooms"]))
-            if out.get("errors"):
-                self.say(f"walk:{m['guid']}", f"walked the path with {out['errors']} light write(s) failing (see the ledger)")
-        except Exception as e:  # noqa: BLE001
-            self.say(f"walk:{m['guid']}", f"couldn't walk the path: {type(e).__name__}: {str(e)[:100]}")
         try:
             pic = tools.call("dog_on_fire")
             self.say(f"fire:{m['guid']}", None, pic["file"])
         except Exception as e:  # noqa: BLE001
             self.say(f"fire:{m['guid']}", f"couldn't make the picture: {type(e).__name__}: {str(e)[:100]}")
-        self.say(f"done:{m['guid']}", "the dog was doin.")
+        self.say(f"doin:{m['guid']}", "dog doin")
+        try:
+            out = tools.call("walk_path")
+            log("chat", "walked", seconds=out["seconds"], writes=out["writes"], errors=out["errors"], rooms=",".join(out["rooms"]))
+            self.say(f"done:{m['guid']}", "dog done" + (f" ({out['errors']} light write(s) failed, see the ledger)" if out.get("errors") else ""))
+        except Exception as e:  # noqa: BLE001
+            self.say(f"done:{m['guid']}", f"dog done, but couldn't walk the path: {type(e).__name__}: {str(e)[:100]}")
 
     def handle(self, m: dict[str, Any]) -> None:
         text = m["text"]
@@ -85,9 +84,10 @@ class Listener:
             self.armed_by = m["sender"]
             log("chat", "WAKE", by=hname(m["sender"]), phrase=wake[0], score=wake[1])
             self._event("chat.wake", m, phrase=wake[0], score=wake[1])
-            self.say(f"wake:{m['guid']}", "the dog is doin.")
             if config.maybe("WTDD_WAKE_SHOW") not in (None, "0", "false", "no"):
                 self.wake_show(m)
+            else:
+                self.say(f"wake:{m['guid']}", f"the dog is doin. listening for {int(self.listen_s)}s: {' · '.join(command_list())}")
             return
         hit = match_command(text)
         if not hit:
