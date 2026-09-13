@@ -4,7 +4,7 @@
 
 **An agent in a dog.** A Unitree Go2 that runs a routine on a map of the house on its own, with the lights following it room by room, its two eyes (a YOLO detector and a vision model) telling the housemates' iMessage group what's out of place and who's at the door, and a receipt for every step.
 
-**Demo video (2 min):** _link goes here_ · **Setup walkthrough (long, unscripted):** _link goes here_ · Built in one day for the Multi-App AI Agent Hackathon (Lemma and Comma Capital, 2026-09-13) by Johnny Sheng.
+**Demo video (2 min):** _link goes here_ · **Extended setup video (uncut, 2.5 min, optional; you don't need to watch it):** [download](https://github.com/Jshengdev/what-the-dog-doin/releases/download/demo-day-2026-09-13/setup-walkthrough-uncut.mp4) · Built in one day for the Multi-App AI Agent Hackathon (Lemma and Comma Capital, 2026-09-13) by Johnny Sheng.
 
 ## The problem, and the story
 
