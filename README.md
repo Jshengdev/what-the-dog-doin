@@ -4,7 +4,9 @@
 
 **An agent in a dog.** A proactive, autonomous agent that we gave the body of a Unitree Go2. It runs its routine on a map of the house on its own, the lights follow it room by room, its two eyes (a YOLO detector and a vision model) tell the housemates' iMessage group what's out of place and who's at the door, it asks the group when it isn't sure, and it takes their corrections. Every step it takes leaves a receipt. It bridges the physical world and the digital one: the same agent that reads a group chat can walk into a room, look, and act.
 
-**Demo video (2 min):** _link goes here_ · **Extended setup video (uncut, 2.5 min, optional; you don't need to watch it):** [download](https://github.com/Jshengdev/what-the-dog-doin/releases/download/demo-day-2026-09-13/setup-walkthrough-uncut.mp4) · Built in one day for the Multi-App AI Agent Hackathon (Lemma and Comma Capital, 2026-09-13) by Johnny Sheng.
+<p align="center"><a href="DEMO_VIDEO_URL"><b>▶ Watch the two-minute demo</b></a><br><sub>demo video link goes here</sub></p>
+
+Built in one day for the Multi-App AI Agent Hackathon (Lemma and Comma Capital, 2026-09-13) by Johnny Sheng.
 
 ## By the numbers
 
@@ -125,7 +127,7 @@ python -m wtdd.evals --scenario follow --n 3   # the dog replays the recorded ro
 python -m wtdd ask "dim the living room and make the strip warm"   # the model picks the tools
 ```
 
-On the remote (http://127.0.0.1:7788/): drag the orange dog to where it stands and swing its cone to where it looks; "record route" and drive it once with the controller, "mark stop here" where it should look, "stop & save route"; then "walk the path" and it drives that route itself, or text the group and the round runs. The long unscripted setup video (link above) is the whole of this, done once, mistakes included.
+On the remote (http://127.0.0.1:7788/): drag the orange dog to where it stands and swing its cone to where it looks; "record route" and drive it once with the controller, "mark stop here" where it should look, "stop & save route"; then "walk the path" and it drives that route itself, or text the group and the round runs. The whole of this, done once on camera with the mistakes left in, is the [extended setup video](https://github.com/Jshengdev/what-the-dog-doin/releases/download/demo-day-2026-09-13/setup-walkthrough-uncut.mp4) (uncut, 2.5 min; optional, you don't need to watch it).
 
 <p align="center"><img src="docs/media/chat-dogs-eye-view.png" alt="two photos the group received: a level look across the desk, and a nod-up look over the coffee table" width="420"><br><sub>docs/media/chat-dogs-eye-view.png: what the group gets when you press "send room shot to castle": the dog's eye view, a level look and a nod up, from the remote</sub></p>
 
