@@ -9,7 +9,11 @@ Run: python -m wtdd.chat listen [--dry-run] [--every 2] [--listen-s 120] [--once
 Facts. No replay at boot: the watermark starts at MAX(ROWID). WTDD_LISTEN_S (default 120) is the armed window and any
 recognized message re-arms it. Who may wake the dog: any member while HOUSEMATES is empty (one WARN), else the listed
 handles; from-me rows only with WTDD_ALLOW_SELF=1 (Johnny's phone shares the dog's account), and even then the dog's
-own posts are refused by confirmed guid and by the opening words of its replies. A housemate's reply that starts like a
+own posts are refused by confirmed guid and by the opening words of its replies. "yo dog ..." (or "hey dog", "dog ...") is a chat turn: the model answers from the group's context (memory.context: who
+said what, what the dog did and reported, corrections), reading the same sender's next messages for GATHER_S as part
+of the request; nothing else in the chat is answered. "who dis?!" from intruder_alarm opens a question (pending.json):
+the next answer within PENDING_WINDOW_S decides, "idk" and its kin = "STRANGER DANGER!!!" x3 + light_alarm, anything
+else = "ok, standing down"; no answer = stood down quietly. A housemate's reply that starts like a
 correction ("that's socks", "not a bird", "actually ...") within 30 min of the dog's last posted look is a
 chat.correction row, is appended to state.json, is acknowledged with "noted: ...", and the next look's prompt carries
 it (the vision model is told what the housemates said it got wrong). WTDD_ROUND=dog makes the round the
@@ -33,14 +37,19 @@ from .. import config
 from ..ledger import append, log, rows as ledger_rows
 from . import db, memory
 from .housemates import HOUSEMATES, name as hname
-from .triggers import commands as command_list, is_wake, match_command, normalize, wake_phrases
+from .triggers import commands as command_list, is_chat, is_wake, match_command, normalize, wake_phrases
 
 CORRECTION = re.compile(r"^(its|it s|thats|that s|those are|these are|that is|no|nope|wrong|actually|not)\b")
 CORRECTION_WINDOW_S = 1800   # a correction counts within this long after the dog's last post
 STATE = config.ROOT / "state.json"
+PENDING = config.ROOT / "pending.json"   # the open question from intruder_alarm ("who dis?!"): the chat's next answer decides
+PENDING_WINDOW_S = 120
+IDK = re.compile(r"\b(idk|dunno|no idea|dont know|don t know|no clue|not me|nope|who|never seen|stranger)\b")
+GATHER_S = 6.0                # after "yo dog ...", the same sender's next messages within this long join the request
 
 Poster = Callable[[str, str, str, str | None, str | None], Any]   # (guid, trigger_key, kind, text, file)
-OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "here's what i see", "yo, we don't know", "noted:", "ok, done listening",
+OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "here's what i see", "yo, we don't know", "noted:",
+               "who dis", "stranger danger", "ok, standing down", "ok, done listening",
                "living room lights", "did:", "listening for")   # how the dog's own text posts begin
 
 
@@ -171,11 +180,67 @@ class Listener:
         self.say(f"fix:{m['guid']}", f"noted: {m['text'][:120]}")
         return True
 
+    def verdict(self, m: dict[str, Any]) -> bool:
+        """The chat answering "who dis?!" (intruder_alarm): "idk" and its kin mean a stranger, so "STRANGER DANGER!!!"
+        three times and light_alarm; anything else stands the dog down with "ok". One intruder.verdict row either way."""
+        if not PENDING.exists():
+            return False
+        pend = json.loads(PENDING.read_text())
+        if time.time() - pend.get("t", 0) > PENDING_WINDOW_S:
+            PENDING.unlink(missing_ok=True)
+            log("chat", "who dis: no answer in time, standing down")
+            return False
+        from .. import tools
+        stranger = bool(IDK.search(normalize(m["text"])))
+        PENDING.unlink(missing_ok=True)
+        append({"step": "intruder.verdict", "agent": "central", "tool": "intruder.verdict", "app": "imessage", "ok": True,
+                "args": {"from": m["sender"], "text": m["text"][:200], "guid": m["guid"], "asked": pend.get("trigger")},
+                "state_before": None, "state_after": {"verdict": "stranger" if stranger else "known"}, "response_or_error": None, "latency_ms": 0})
+        log("chat", "VERDICT", by=hname(m["sender"]), verdict="stranger" if stranger else "known", text=m["text"][:60])
+        if not stranger:
+            self.say(f"ok:{m['guid']}", "ok, standing down")
+            return True
+        self.say(f"danger:{m['guid']}", "STRANGER DANGER!!! STRANGER DANGER!!! STRANGER DANGER!!!")
+        try:
+            alarm = tools.call("light_alarm", seconds=pend.get("seconds", 5))
+            log("chat", "alarm", signaled=len(alarm["signaled"]), errors=len(alarm["errors"]))
+        except Exception as e:  # noqa: BLE001
+            self.say(f"alarm-fail:{m['guid']}", f"couldn't sound the alarm: {type(e).__name__}: {str(e)[:100]}")
+        return True
+
+    def chat(self, m: dict[str, Any]) -> None:
+        """A chat turn: "yo dog ..." goes to the model with the group's context (who said what, what the dog did and
+        reported, the corrections). The same sender's next messages within GATHER_S are read as part of the request.
+        One chat.ask row; the answer is one gated post keyed on the message; nothing else in the chat is answered."""
+        from ..agent import ask
+        parts = [m["text"]]
+        time.sleep(GATHER_S)
+        more = db.new_messages(self.guid, self.last)
+        if more:
+            memory.store(self.guid, more)
+            self.last = more[-1]["rowid"]
+            parts += [x["text"] for x in more if x["sender"] == m["sender"] and x.get("text")]
+            for x in more:   # a wake or a correction from someone else in the window is still handled
+                if x["sender"] != m["sender"] and x.get("text"):
+                    self.handle(x)
+        text = " ".join(parts)
+        self._event("chat.ask", m, gathered=len(parts) - 1, text=text[:200])
+        try:
+            out = ask(text, context=memory.context(self.guid))
+            self.say(f"ai:{m['guid']}", out["text"][:300] or f"did: {', '.join(c['tool'] for c in out['calls']) or 'nothing'}")
+        except Exception as e:  # noqa: BLE001
+            self.say(f"ai:{m['guid']}", f"couldn't: {type(e).__name__}: {str(e)[:120]}")
+
     def handle(self, m: dict[str, Any]) -> None:
         text = m["text"]
         if not text or not self.allowed(m):
             return
+        if self.verdict(m):
+            return
         if self.correction(m):
+            return
+        if is_chat(text):
+            self.chat(m)
             return
         wake = is_wake(text)
         if not self.armed:
@@ -232,6 +297,9 @@ class Listener:
         if self.armed_by and not self.armed:
             log("chat", "disarmed (timeout)", was=hname(self.armed_by))
             self.armed_by = None
+        if PENDING.exists() and time.time() - json.loads(PENDING.read_text()).get("t", 0) > PENDING_WINDOW_S:
+            PENDING.unlink(missing_ok=True)
+            log("chat", "who dis: no answer in time, standing down")
         msgs = db.new_messages(self.guid, self.last)
         if not msgs:
             return 0

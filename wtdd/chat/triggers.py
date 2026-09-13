@@ -4,11 +4,10 @@ Run: python -m wtdd.chat triggers "what teh dog doin" "lights off pls"   (prints
 
 Wake phrases come from WTDD_TRIGGERS, commands from WTDD_COMMANDS (comma-separated, in .env; defaults below). A message
 wakes the dog if a wake phrase appears in it (after normalizing case, quotes, and punctuation), or a sliding window of the
-message is at least 80% similar to a wake phrase of three or more words, or its first word is "dog" ("dog, do a round"),
-or it contains the tokens "dog" and "doin"/"doing". A command matches at 75% similarity over the same windows.
+message is at least 80% similar to a wake phrase of three or more words, or it contains the tokens "dog" and "doin"/"doing". A message opening with "yo dog", "hey dog" or "dog" is a chat turn
+(is_chat), answered by the model from the group's context, not the routine. A command matches at 75% similarity over the same windows.
 Verified: "what teh dog doin" scores 0.94 against "what the dog doin"; "sitt" matches "sit"; "the dog is cute" and
-"hotdog time" do not wake. The two-word phrases ("yo dog", "hey dog") match only as exact substrings, so "the dog" can
-never fire them.
+"hotdog time" do not wake. Two-word wake phrases, if any are configured, match only as exact substrings.
 """
 from __future__ import annotations
 import difflib
@@ -16,7 +15,8 @@ import re
 
 from .. import config
 
-DEFAULT_WAKE = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd,yo dog,hey dog"
+DEFAULT_WAKE = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd"
+CHAT = re.compile(r"^(yo dog|hey dog|dog)\b")   # a message that opens like this is a chat turn for the model, not the routine
 DEFAULT_COMMANDS = "do a round,lights on,lights off,dim,bright,show,sit,stand,hello,look,status,stop"
 WAKE_FLOOR = 0.80
 COMMAND_FLOOR = 0.75
@@ -66,12 +66,15 @@ def is_wake(text: str | None) -> tuple[str, float] | None:
     if hit:
         return hit
     words = normalize(text).split()
-    if words and words[0] == "dog":          # addressed directly: "dog, do a round", "dog sit"
-        return ("dog,", 0.9)
     toks = set(words)
     if "dog" in toks and toks & {"doin", "doing", "doinn", "doinnn"}:
         return ("dog doin", WAKE_FLOOR)
     return None
+
+
+def is_chat(text: str | None) -> bool:
+    """A chat turn: the message opens with "yo dog", "hey dog" or "dog" (and is not a wake phrase)."""
+    return bool(CHAT.match(normalize(text))) and is_wake(text) is None
 
 
 def match_command(text: str | None) -> tuple[str, float] | None:

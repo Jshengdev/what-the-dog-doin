@@ -149,15 +149,15 @@ class Spam(unittest.TestCase):
 
 class Compose(unittest.TestCase):
     def test_messages_shape_for_wtdd_llm(self):
-        msgs = cli.compose("## chat\n[07:00] dog: on it", "dog, do a round")
+        msgs = cli.compose("## chat\n[07:00] dog: on it", "what the dog doin")
         self.assertEqual([m["role"] for m in msgs], ["system", "user"])
         self.assertEqual(msgs[0]["content"], cli.SYSTEM)
-        self.assertIn("## the ask\ndog, do a round", msgs[1]["content"])
+        self.assertIn("## the ask\nwhat the dog doin", msgs[1]["content"])
         self.assertIn("[07:00] dog: on it", msgs[1]["content"])
 
 
 MSGS = [
-    {"rowid": 1, "guid": "g1", "text": "dog, do a round", "is_from_me": 0, "sender": "+15550001111",
+    {"rowid": 1, "guid": "g1", "text": "what the dog doin", "is_from_me": 0, "sender": "+15550001111",
      "ts_utc": "2026-09-13 07:00:00", "attachments": []},
     {"rowid": 2, "guid": "g2", "text": None, "is_from_me": 0, "sender": "+15550001111",
      "ts_utc": "2026-09-13 07:00:05", "attachments": ["/tmp/a.png"]},
@@ -175,13 +175,13 @@ class Memory(unittest.TestCase):
 
     def test_context(self):
         ctx = memory.context("chat-A")
-        self.assertIn("[07:00] +15550001111: dog, do a round", ctx)
+        self.assertIn("[07:00] +15550001111: what the dog doin", ctx)
         self.assertIn("[07:00] +15550001111: [non-text] [photo]", ctx)
         self.assertIn("[07:00] dog: on it", ctx)
         self.assertIn("## what the dog did", ctx)
         self.assertIn("## what was reported", ctx)
         self.assertIn("## state", ctx)
-        self.assertNotIn("dog, do a round", memory.context("chat-B"))   # no cross-chat leak
+        self.assertNotIn("what the dog doin", memory.context("chat-B"))   # no cross-chat leak
 
     def test_last_trigger_needs_known_housemate(self):
         self.assertIsNone(memory.last_trigger("chat-A", {}))

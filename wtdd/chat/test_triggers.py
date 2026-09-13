@@ -10,7 +10,7 @@ from unittest import mock
 os.environ["WTDD_WAKE_SHOW"] = "0"
 os.environ["WTDD_AGENT"] = "0"
 os.environ["WTDD_ALLOW_SELF"] = "0"
-os.environ["WTDD_TRIGGERS"] = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd,yo dog,hey dog"
+os.environ["WTDD_TRIGGERS"] = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd"
 os.environ["WTDD_COMMANDS"] = "do a round,lights on,lights off,dim,bright,show,sit,stand,hello,look,status,stop"
 os.environ.setdefault("WTDD_LEDGER", os.path.join(tempfile.mkdtemp(), "ledger.jsonl"))
 os.environ.setdefault("WTDD_MEMORY", os.path.join(tempfile.mkdtemp(), "memory.db"))
@@ -25,7 +25,7 @@ class Recognize(unittest.TestCase):
 
     def test_wake_exact_and_close(self):
         for s in ["what the dog doin", "WHAT THE DOG DOIN??", "yo whats the dog doing", "wat da dog doin",
-                  "wtdd", "yo dog", "what's the dog doin rn", "dog, do a round", "dog"]:
+                  "wtdd", "what's the dog doin rn", "dog doin"]:
             self.assertIsNotNone(T.is_wake(s), s)
 
     def test_not_wake(self):
