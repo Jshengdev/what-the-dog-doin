@@ -1,11 +1,175 @@
 {
-  "note": "Shared map space = house.svg viewBox (0 0 1060 1540). path = the dot's route in order; zones = polygons with the Hue zone name from wtdd/hue/zones.json and whether the strip belongs to it. Edit here or on the page (Edit path, Save).",
-  "path": [[290, 1240], [380, 1240], [470, 1240], [560, 1240], [650, 1240]],
+  "note": "Shared map space = house.svg viewBox (0 0 1060 1540). path = the dot's route in order; zones = polygons with the Hue zone name from wtdd/hue/zones.json and whether the strip belongs to it. Edit here or on the page (Edit path, Save). lights = markers: kind dot (a lamp) or line (the strip), pts in map space; drag them on the page, click one to make the real light blink (identify), double-click to relabel, Save. follow = zones | proximity; field_radius_px = how far a light reacts to the dog.",
+  "path": [
+    [
+      290,
+      1240
+    ],
+    [
+      380,
+      1240
+    ],
+    [
+      470,
+      1240
+    ],
+    [
+      560,
+      1240
+    ],
+    [
+      650,
+      1240
+    ]
+  ],
   "speed_px_s": 60,
   "behind_lag_s": 1.5,
   "zones": [
-    {"name": "a", "label": "zone a", "poly": [[255, 1040], [400, 1040], [400, 1470], [300, 1470], [255, 1400]], "strip": false},
-    {"name": "b", "label": "zone b", "poly": [[400, 1040], [560, 1040], [560, 1470], [400, 1470]], "strip": false},
-    {"name": "c", "label": "zone c", "poly": [[560, 1040], [700, 1040], [700, 1440], [560, 1440]], "strip": true}
+    {
+      "name": "a",
+      "label": "zone a",
+      "poly": [
+        [
+          255,
+          1040
+        ],
+        [
+          400,
+          1040
+        ],
+        [
+          400,
+          1470
+        ],
+        [
+          300,
+          1470
+        ],
+        [
+          255,
+          1400
+        ]
+      ],
+      "strip": false
+    },
+    {
+      "name": "b",
+      "label": "zone b",
+      "poly": [
+        [
+          400,
+          1040
+        ],
+        [
+          560,
+          1040
+        ],
+        [
+          560,
+          1470
+        ],
+        [
+          400,
+          1470
+        ]
+      ],
+      "strip": false
+    },
+    {
+      "name": "c",
+      "label": "zone c",
+      "poly": [
+        [
+          560,
+          1040
+        ],
+        [
+          700,
+          1040
+        ],
+        [
+          700,
+          1440
+        ],
+        [
+          560,
+          1440
+        ]
+      ],
+      "strip": true
+    }
+  ],
+  "field_radius_px": 220,
+  "follow": "zones",
+  "lights": [
+    {
+      "id": "1e53ff31-2dcc-496a-ad93-3cc25eb50bad",
+      "name": "Hue Iris 2",
+      "label": "Hue Iris 2",
+      "kind": "dot",
+      "device": "hue",
+      "pts": [
+        [
+          300,
+          1120
+        ]
+      ]
+    },
+    {
+      "id": "56ecb61c-00c8-46ac-8dca-abe789ba27c3",
+      "name": "Go table lamp 1",
+      "label": "Go table lamp 1",
+      "kind": "dot",
+      "device": "hue",
+      "pts": [
+        [
+          430,
+          1110
+        ]
+      ]
+    },
+    {
+      "id": "6c2556e3-bf37-4efd-9a04-b60ebd1b3452",
+      "name": "special",
+      "label": "special",
+      "kind": "dot",
+      "device": "hue",
+      "pts": [
+        [
+          560,
+          1120
+        ]
+      ]
+    },
+    {
+      "id": "d7b0ae35-f044-429c-9eed-a3164173d340",
+      "name": "sticky canbo",
+      "label": "sticky canbo",
+      "kind": "dot",
+      "device": "hue",
+      "pts": [
+        [
+          650,
+          1330
+        ]
+      ]
+    },
+    {
+      "id": "strip",
+      "name": "strip",
+      "label": "LED strip",
+      "kind": "line",
+      "device": "strip",
+      "pts": [
+        [
+          280,
+          1420
+        ],
+        [
+          690,
+          1420
+        ]
+      ]
+    }
   ]
 }

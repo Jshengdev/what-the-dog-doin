@@ -25,13 +25,15 @@ def model(kind: str = "text") -> str:
 
 def generate(agent: str, messages: list[dict[str, Any]], *, model_id: str | None = None,
              max_tokens: int = 400, temperature: float = 0.4, response_format: dict | None = None,
-             timeout: float = 60.0) -> dict[str, Any]:
+             timeout: float = 60.0, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Returns {"text": str, "model": str, "usage": {...}, "raw": <full response>}."""
     mid = model_id or model("text")
     body: dict[str, Any] = {"model": mid, "messages": messages, "max_tokens": max_tokens,
                             "temperature": temperature}
     if response_format:
         body["response_format"] = response_format
+    if tools:
+        body["tools"] = tools
     headers = {"Authorization": f"Bearer {config.get('OPENROUTER_API_KEY')}",
                "HTTP-Referer": "https://github.com/Jshengdev/what-the-dog-doin",
                "X-Title": "what-the-dog-doin", "Content-Type": "application/json"}
@@ -46,10 +48,11 @@ def generate(agent: str, messages: list[dict[str, Any]], *, model_id: str | None
         choice = data["choices"][0]
         text = choice["message"].get("content") or ""
         finish = choice.get("finish_reason")
-        if finish not in ("stop", "end_turn", "length", None):
+        if finish not in ("stop", "end_turn", "length", "tool_calls", None):
             raise RuntimeError(f"openrouter finish_reason={finish}: {text[:200]}")
         out = {"text": text, "model": data.get("model", mid), "usage": data.get("usage", {}),
                "finish_reason": finish, "raw": data}
-        r["state_after"] = {"model": out["model"], "usage": out["usage"], "finish": finish, "chars": len(text)}
+        r["state_after"] = {"model": out["model"], "usage": out["usage"], "finish": finish, "chars": len(text),
+                            "tool_calls": [t["function"]["name"] for t in (choice["message"].get("tool_calls") or [])]}
         r["response_or_error"] = text[:200]
         return out

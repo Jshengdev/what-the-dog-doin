@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from unittest import mock
 
+os.environ["WTDD_WAKE_SHOW"] = "0"
+os.environ["WTDD_AGENT"] = "0"        # the model fallback is not part of the state-machine tests   # the wake demo (lights + picture) is not part of the state-machine tests
 os.environ["WTDD_TRIGGERS"] = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd,yo dog,hey dog"
-os.environ["WTDD_COMMANDS"] = "do a round,lights on,lights off,dim,bright,sit,stand,hello,look,status,stop"
+os.environ["WTDD_COMMANDS"] = "do a round,lights on,lights off,dim,bright,show,sit,stand,hello,look,status,stop"
 os.environ.setdefault("WTDD_LEDGER", os.path.join(tempfile.mkdtemp(), "ledger.jsonl"))
 os.environ.setdefault("WTDD_MEMORY", os.path.join(tempfile.mkdtemp(), "memory.db"))
 

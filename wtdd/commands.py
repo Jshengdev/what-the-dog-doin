@@ -83,17 +83,32 @@ def status() -> str:
     return "; ".join(f"{r['tool']} {'ok' if r['ok'] else 'FAILED'} {r.get('latency_ms', '?')}ms" for r in last)
 
 
+def _t(tool: str, **args: Any) -> Callable[[], Any]:
+    """A chat command is exactly one registry tool call (wtdd/tools): the same code path as the remote and the MCP."""
+    from . import tools
+    return lambda: tools.call(tool, **args)
+
+
+def _status() -> str:
+    from . import tools
+    st = tools.call("lights_status")
+    hue = ", ".join(f"{l['name']} {'on' if l['on'] else 'off'}" for l in st["hue"] if l.get("room") == "Living room")
+    s = st["strip"]
+    return f"{hue}; strip {'on' if s.get('on') else 'off'} {s.get('brightness_pct', '?')}%" if "error" not in s else f"{hue}; strip: {s['error']}"
+
+
 HANDLERS: dict[str, Callable[[], Any]] = {
-    "lights on": lambda: lights(True),
-    "lights off": lambda: lights(False),
-    "dim": lambda: lights(True, 20),
-    "bright": lambda: lights(True, 100),
-    "sit": lambda: dog_cmd("Sit"),
-    "stand": lambda: dog_cmd("RiseSit"),
-    "hello": lambda: dog_cmd("Hello"),
-    "look": look,
-    "do a round": do_round,
-    "status": status,
+    "lights on": _t("lights_on"),
+    "lights off": _t("lights_off"),
+    "dim": _t("lights_dim", percent=20),
+    "bright": _t("lights_dim", percent=100),
+    "show": _t("light_show"),
+    "sit": _t("dog_cmd", name="Sit"),
+    "stand": _t("dog_cmd", name="RiseSit"),
+    "hello": _t("dog_cmd", name="Hello"),
+    "look": _t("dog_look"),
+    "do a round": _t("dog_round"),
+    "status": _status,
 }
 
 

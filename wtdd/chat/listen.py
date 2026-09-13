@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable
 
 from .. import commands as cmds
+from .. import config
 from ..ledger import append, log
 from . import db, memory
 from .housemates import HOUSEMATES, name as hname
@@ -48,6 +49,20 @@ class Listener:
                 "state_before": None, "state_after": {"armed": self.armed, "armed_by": self.armed_by},
                 "response_or_error": None, "latency_ms": 0})
 
+    def wake_show(self, m: dict[str, Any]) -> None:
+        """The wake demo: play with all the lights, then the picture. Each part is a tool call and a gated post."""
+        try:
+            out = cmds.run("show")
+            self.say(f"show:{m['guid']}", f"lights played: {out['done']}/{out['steps']} steps" + (f" ({out['failed']})" if out.get("failed") else ""))
+        except Exception as e:  # noqa: BLE001
+            self.say(f"show:{m['guid']}", f"couldn't play the lights: {type(e).__name__}: {str(e)[:100]}")
+        try:
+            from .. import tools
+            pic = tools.call("dog_on_fire")
+            self.say(f"fire:{m['guid']}", "this is fine", pic["file"])
+        except Exception as e:  # noqa: BLE001
+            self.say(f"fire:{m['guid']}", f"couldn't make the picture: {type(e).__name__}: {str(e)[:100]}")
+
     def handle(self, m: dict[str, Any]) -> None:
         text = m["text"]
         if not text or not self.allowed(m):
@@ -60,13 +75,27 @@ class Listener:
             self.armed_by = m["sender"]
             log("chat", "WAKE", by=hname(m["sender"]), phrase=wake[0], score=wake[1])
             self._event("chat.wake", m, phrase=wake[0], score=wake[1])
-            self.say(f"wake:{m['guid']}", f"listening for {int(self.listen_s)}s. say one of: {' · '.join(command_list())}")
+            self.say(f"wake:{m['guid']}", f"the dog is doin. listening for {int(self.listen_s)}s: {' · '.join(command_list())}")
+            if config.maybe("WTDD_WAKE_SHOW") not in (None, "0", "false", "no"):
+                self.wake_show(m)
             return
         hit = match_command(text)
         if not hit:
             if wake:
                 self.armed_until = time.time() + self.listen_s
-            log("chat", "armed, no command in message", by=hname(m["sender"]), chars=len(text))
+                return
+            if config.maybe("WTDD_AGENT") in (None, "0", "false", "no"):
+                log("chat", "armed, no command in message", by=hname(m["sender"]), chars=len(text))
+                return
+            # the model takes charge: a free-form ask while armed becomes tool calls over the registry
+            from ..agent import ask
+            self._event("chat.ask", m)
+            self.armed_until = time.time() + self.listen_s
+            try:
+                out = ask(text, context=memory.context(self.guid))
+                self.say(f"ai:{m['guid']}", out["text"][:300] or f"did: {', '.join(c['tool'] for c in out['calls']) or 'nothing'}")
+            except Exception as e:  # noqa: BLE001
+                self.say(f"ai:{m['guid']}", f"couldn't: {type(e).__name__}: {str(e)[:120]}")
             return
         cmd, score = hit
         log("chat", "COMMAND", by=hname(m["sender"]), command=cmd, score=score)
