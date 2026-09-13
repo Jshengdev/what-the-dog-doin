@@ -72,4 +72,5 @@ What re-running the agent does and does not do to real accounts.
 | Hue rate limit, cloud route | 15 of 15 quick sets ok, no 429, median 794 ms | `python -m wtdd.hue burst special --n 15` |
 | Hue alternating red/blue signal | ok, read back `signal: alternating` | `python -m wtdd.hue signal special --seconds 5` |
 | Tuya WT1 LED strip, local protocol 3.5 (living room) | probe ok at 10.66.10.44; on, dim 30, temp 80, 17-step fade 5 to 100 over 4 s, all read back (dps 20/22/23) | `python -m wtdd.tuya probe`, `dim 30`, `temp 80`, `fade --start 5 --end 100 --seconds 4` |
+| Corridor sweep from the map page (dot crosses zones a, b, c) | a on, b on, a off (lag), c on + strip on, b off, c off + strip off: 8 writes, 8 read-backs, 0 failures | press "run the corridor" at http://127.0.0.1:7788/ then `python -m wtdd.tools ledger_tail` |
 | Text to lights, whole chain | wake, "turn the lights off", "lights on pls", stop: living room zone (4 lights) off then on, read back, 2.7 s per zone change | `python -m wtdd.chat simulate "what the dog doin" "lights off" "lights on" "stop"` |

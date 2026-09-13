@@ -9,6 +9,7 @@ Read this at 9:00 AM. It is the whole plan on one page. Everything else in `docs
 ## Done means all of this exists at 4:00 PM
 
 1. **The repo** `what-the-dog-doin` (make it public, or share access, the moment the submission mechanism is known at 9:00):
+   - `wtdd/tools/` one file per task (the registry the HTTP API, the MCP server, the chat commands and the React remote all use); `wtdd/api.py` + `ui/` (the remote and the house map at http://127.0.0.1:7788/); `wtdd/mcp_server.py`; `wtdd/tuya/` (the LED strip).
    - `wtdd/` one Python package, one process: `dog.py` (connection, state, moves, latest frame), `lights.py` (zones, set, read-back, alternating signal), `chat.py` and `memory.py` (per `docs/CHAT.md`: poll the group by ROWID, trigger gate, osascript send of text and image, read-back confirm, never twice), `follow.py` (odometry to zones), `watch.py` (baseline, OpenCV region gate, vision call, report), `central.py` (the one model loop with typed tools), `ledger.py`, `evals.py`, `zones.json` and `regions.json` (authored once), `ui/index.html` (the map and the ledger page).
    - `ledger.jsonl` from the real trials, `baselines/` frames with sidecars, `evals/` truth files.
    - `docs/RELIABILITY-BRIEF.md` filled: system, apps, receipts, trials table (pass / fail / unsafe, 3 runs × 5 scenarios), prohibited actions with zero violations asserted from state, failure modes, DEMO_CACHE inventory, idempotence.
