@@ -20,6 +20,7 @@ Pre-build. The agent is defined in `docs/SCOPE-LOCK.md` (open).
 | `docs/JUDGES.md` | Judge and host intel: what they build, post, and reward. |
 | `docs/TASTE.md` | The visual system for the demo UI. |
 | `docs/ARCHITECTURE.md` | Processes, agent contracts, follow-the-body loop, ledger, evals, Lemma. |
+| `docs/CHAT.md` | iMessage transport on your own account, never-twice gate, two-table memory. |
 | `docs/VISION.md` | Camera frame to report: capture, vision call, baseline, broken-light check, evals. |
 | `docs/DEMO-SCRIPT.md` | The 120-second shot list, choreography, fallbacks, brief outline. |
 | `docs/THREADS.md` | Parallel workstreams, feasibility calls, headless vs UI. |
