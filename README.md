@@ -4,7 +4,7 @@
 
 **An agent in a dog.** A proactive, autonomous agent that we gave the body of a Unitree Go2. It runs its routine on a map of the house on its own, the lights follow it room by room, its two eyes (a YOLO detector and a vision model) tell the housemates' iMessage group what's out of place and who's at the door, it asks the group when it isn't sure, and it takes their corrections. Every step it takes leaves a receipt. It bridges the physical world and the digital one: the same agent that reads a group chat can walk into a room, look, and act.
 
-<p align="center"><a href="https://youtu.be/8IqdF3_FY70"><img src="https://img.youtube.com/vi/8IqdF3_FY70/maxresdefault.jpg" alt="the two-minute demo" width="720"></a><br><a href="https://youtu.be/8IqdF3_FY70"><b>▶ Watch the two-minute demo</b></a></p>
+<p align="center"><a href="https://youtu.be/8IqdF3_FY70"><img src="https://img.youtube.com/vi/8IqdF3_FY70/hqdefault.jpg" alt="the two-minute demo" width="720"></a><br><a href="https://youtu.be/8IqdF3_FY70"><b>▶ Watch the two-minute demo</b></a></p>
 
 Built in one day for the Multi-App AI Agent Hackathon (Lemma and Comma Capital, 2026-09-13) by Johnny Sheng.
 
