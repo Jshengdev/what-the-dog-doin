@@ -15,8 +15,9 @@ carries "map": {p, heading_deg}. follow(path, stops) switches the dog's obstacle
 otherwise) and is a task that feeds nav.steer velocities into the same drive loop, waypoint by waypoint, pausing at the
 map's stops until resume(); stop() cancels it. With avoidance on, the drive loop sends velocities through the
 OBSTACLES_AVOID service (MOVE 1003, no ack) instead of SPORT Move; the state read-back is the receipt. record(True)
-records the believed pose while Johnny drives, mark() adds a stop at the current spot, record(False) returns the
-thinned trace as {path, stops} and the API writes it into ui/map.json: the route the dog drove is the route it follows. One dog.calibrate and one dog.follow
+records the believed pose while Johnny drives, mark(look, say) adds a stop at the current spot with the action to
+replay there, record(False) returns the thinned trace as {path, stops, actions} and the API writes it into
+ui/map.json: the route the dog drove, and what it did along it, is what it replays. One dog.calibrate and one dog.follow
 row; a failed or cancelled follow says so in state().follow.error.
 
 The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-13:
@@ -132,7 +133,8 @@ class DogSession:
         return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st,
                 "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state,
                 "avoid": self.body._avoid if self.body else None, "recheck": self.recheck,
-                "rec": {"active": True, "n": len(self.rec["points"]), "points": self.rec["points"], "marks": self.rec["marks"]} if self.rec else None}
+                "rec": {"active": True, "n": len(self.rec["points"]), "points": self.rec["points"], "marks": [m["p"] for m in self.rec["marks"]],
+                        "actions": [m["action"] for m in self.rec["marks"]]} if self.rec else None}
 
     # ---- recording a route by driving (the trace of where it thinks it is becomes the map's path)
     def record(self, on: bool) -> dict[str, Any]:
@@ -163,20 +165,30 @@ class DogSession:
                 path.append(q)
         if math.dist(pts[-1], path[-1]) > 1:
             path.append(pts[-1])
-        stops = sorted({min(range(len(path)), key=lambda i: math.dist(path[i], m)) for m in rec["marks"]})
+        actions: dict[str, dict] = {}
+        for m in rec["marks"]:   # each mark becomes the nearest waypoint, carrying the action recorded there
+            i = min(range(len(path)), key=lambda i: math.dist(path[i], m["p"]))
+            actions[str(i)] = m["action"]
+        stops = sorted(int(k) for k in actions)
         length = round(sum(math.dist(path[i - 1], path[i]) for i in range(1, len(path))))
         with step("dog", "dog.record", "map", {"samples": len(pts), "marks": rec["marks"]}) as r:
-            r["state_after"] = {"path_pts": len(path), "stops": stops, "length_px": length, "seconds": round(time.time() - rec["started"], 1)}
+            r["state_after"] = {"path_pts": len(path), "stops": stops, "actions": actions, "length_px": length, "seconds": round(time.time() - rec["started"], 1)}
         log("dog", "route recorded", samples=len(pts), waypoints=len(path), stops=stops, length_px=length)
-        return {"active": False, "path": path, "stops": stops, "length_px": length, "samples": len(pts)}
+        return {"active": False, "path": path, "stops": stops, "actions": actions, "length_px": length, "samples": len(pts)}
 
-    def mark(self) -> dict[str, Any]:
-        """A stop at the dog's current believed position (while recording)."""
+    def mark(self, look: str = "tilt", say: bool = True) -> dict[str, Any]:
+        """A stop at the dog's current believed position (while recording), with the action to replay there: the look
+        kind (tilt | level | sit) and whether to post the sentence. The remote marks one whenever a look button is
+        pressed during a recording, so the recording holds what the dog did, not only where it went."""
         if not self.rec:
             raise RuntimeError("not recording")
         pose = self.map_pose()
-        self.rec["marks"].append(pose["p"])
-        log("dog", "stop marked", p=pose["p"], n=len(self.rec["marks"]))
+        if pose is None:
+            raise RuntimeError("no pose: the dog is not connected or not calibrated")
+        if look not in LOOKS:
+            raise ValueError(f"look must be one of {LOOKS}, got {look!r}")
+        self.rec["marks"].append({"p": pose["p"], "action": {"look": look, "say": bool(say)}})
+        log("dog", "stop marked", p=pose["p"], look=look, say=say, n=len(self.rec["marks"]))
         return {"marks": self.rec["marks"]}
 
     async def _record(self) -> None:

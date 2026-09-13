@@ -105,8 +105,12 @@ class Listener:
         from .. import tools
         from ..tools.dog_say import look_and_see
         k = m["guid"] + (f":{at}" if at is not None else "")
+        look = "tilt"
+        if at is not None:   # the look recorded at this stop (map.json actions), default the tilt nod
+            from ..field import MAP
+            look = ((json.loads(MAP.read_text()).get("actions") or {}).get(str(at)) or {}).get("look", "tilt")
         try:
-            seen = look_and_see(stop=at)
+            seen = look_and_see(look, stop=at)
             self.say(f"say:{k}", seen["text"], seen["file"])
         except Exception as e:  # noqa: BLE001
             self.say(f"say:{k}", f"couldn't look: {type(e).__name__}: {str(e)[:100]}")

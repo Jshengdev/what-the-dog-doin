@@ -17,7 +17,7 @@
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
   POST /dog/avoid {on}            the dog's obstacle avoidance on/off with read-back (the follower turns it on itself)
   POST /dog/record {on}           on: record the believed pose while driving; off: the trace becomes ui/map.json's path + stops
-  POST /dog/mark                  a stop at the current believed position, while recording
+  POST /dog/mark {look?, say?}    a stop with its action (the look kind, post or not) at the current believed position, while recording
   GET  /dog/lidar                 the dog's LiDAR band in map pixels {on, n, age_ms, frame, points_px, why?} (polled every 500 ms while
                                   connected); POST /dog/lidar {on} switches the voxel stream on/off (wtdd/dog/lidar.py)
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
@@ -180,8 +180,8 @@ class H(BaseHTTPRequestHandler):
                     out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
                 elif u.path == "/dog/avoid":          # {on: true|false}: the dog's own obstacle avoidance, read back
                     out = {"avoid": s.avoid(bool(body.get("on", True)))}
-                elif u.path == "/dog/mark":           # a stop at the current believed position, while recording
-                    out = {"rec": s.mark()}
+                elif u.path == "/dog/mark":           # {look?, say?}: a stop with its action at the current believed position, while recording
+                    out = {"rec": s.mark(body.get("look", "tilt"), bool(body.get("say", True)))}
                 elif u.path == "/dog/record":         # {on: true} start; {on: false} stop and write the trace as the map's path + stops
                     rec = s.record(bool(body.get("on", True)))
                     if not rec["active"]:             # written even with problems (the drive is not lost); they are returned and shown
@@ -189,7 +189,7 @@ class H(BaseHTTPRequestHandler):
                         MAP.with_name("map.prev.json").write_text(json.dumps(m, indent=2) + "\n")   # the previous route survives one overwrite
                         if len(rec["path"]) < 2:
                             raise ValueError(f"recording too short to be a route ({len(rec['path'])} point); the map was not changed")
-                        m["path"], m["stops"] = rec["path"], rec["stops"]
+                        m["path"], m["stops"], m["actions"] = rec["path"], rec["stops"], rec["actions"]
                         MAP.write_text(json.dumps(m, indent=2) + "\n")
                         rec["problems"] = check_path(rec["path"], m.get("rooms", []))
                         log("api", "map saved from the recorded route", points=len(rec["path"]), stops=rec["stops"], problems=len(rec["problems"]))

@@ -44,3 +44,24 @@ Cut today, said out loud instead of faked: autonomous navigation (the driver has
 - Screen recording of the remote for the whole take, microphone on, one clap on both recordings to sync.
 - Before the take: `python -m wtdd.api` and `python -m wtdd.chat listen` running (logs in `/tmp/wtdd-api.log`, `/tmp/wtdd-listen.log`), the dog on its hotspot, the path and stops saved, the cup and the socks placed, nobody in frame at stops 1 and 2, someone stepping in at stop 3. `WTDD_AGENT=0` for a quiet round.
 - After the last take: `python -m wtdd.evals --scenario all --write`, commit the README.
+
+## The technical run-through (the narration, what to click, what appears)
+
+Recorded as one continuous screen capture of the remote plus the phone, after the story. Every line names the receipt to point at.
+
+| # | say | do | what appears |
+|---|---|---|---|
+| T1 | "Everything the dog does is one screen. Four things have to be alive: the dog, the lights, the group chat, the detector." | reload the demo view | the status row: four green cards (dog on · located · avoid on; lights online; THE CASTLE · listening; detector live) |
+| T2 | "It knows where it is because I told it once: I drag it to where it stands, point the cone where it looks. Every correction is a receipt." | drag the orange dog onto the route start, swing the cone | `dog.calibrate` lands in receipts; "thinks: x, y · heading" |
+| T3 | "The route isn't a plan I typed. I drove it once with the controller, and while I drove I did the things I wanted it to repeat: nod and photograph here, nod and report there." | "record route", drive a short loop, press "nod + photo" at one spot and "nod + say to castle" at another, "stop & save route" | the orange trace under the dog, marks labeled `tilt photo` / `tilt + say`, then the dashed path with numbered stops and their actions; `dog.record` row with waypoints, stops, actions |
+| T4 | "Now it replays that on its own. Odometry, the dog's own obstacle avoidance, and the lights follow where it believes it is." | "walk the path · the dog drives", thumb on "stop" | the dot rides the line; `lights.set` rows stream; at each stop it nods, both frames land in the eye panel with the sent one outlined, the sentence lands in the chat; at the end `dog.follow` with waypoints reached |
+| T5 | "Two eyes. The detector runs first and boxes what it knows: cups, chairs, people. It can't say 'sock'. So its labels go to the vision model with both frames, and the model checks it." | point at the eye panel after a stop | the boxed frame, the detector line, the sentence, and `pick: …`; in receipts `watch.boxes`, `llm.generate`, `vision.check` |
+| T6 | "Here's the failure we caught today: the detector called socks a bird. The model answered 'it says bird but those are probably teri's socks', and that's what the house got." | show the `vision.check` row, or the message on the phone | `detector_check` in the row; the caption with `[detector: …]` at the end |
+| T7 | "And the housemates check both eyes." | reply "that's socks" from a phone | "noted: …" in the chat; `chat.correction` row; the next look's prompt carries it |
+| T8 | "Nothing goes to the group without a gate and a claim. Send the trigger twice: one round." | text "what the dog doin" twice | one `chat.wake`, one round; the second only re-arms |
+| T9 | "The stranger." | "intruder watch ON", someone steps in front of the camera | `watch.detect` with the person box, "who dis?!" with the photo in the chat, `intruder.alarm`; reply "idk": STRANGER DANGER x3, the room strobes, `intruder.verdict`, `lights.signal` x4 |
+| T10 | "The ledger is the product. Every row is a call and the device's answer. The trials are graded from those rows, not from what the agent says." | scroll receipts; open README's trials table | 11 trials, all pass, each with its seconds and detail |
+| T11 | "This is the dog's own LiDAR on our drawing." (only if T-minus check passed) | "lidar on" | blue dots on the walls around the orange dog |
+
+Before recording: `python -m wtdd.api`, `python -m wtdd.chat listen`, `python -m wtdd.watch` running; `.env` has `WTDD_ROUND=dog`, `WTDD_AGENT=0`, `WTDD_ALARM=1`; the dog on its hotspot, located, avoidance on; the phone with THE CASTLE open in frame.
+
