@@ -21,9 +21,11 @@ row; a failed or cancelled follow says so in state().follow.error.
 
 The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-13:
   level: BalanceStand, frame.
-  tilt:  BalanceStand, Pose on, Euler y=+0.3 (nose down, +15 deg at 0.7 s), 1.6 s, Euler y=-0.3 (nose up, -15 deg from
-         0.36 s to 0.79 s), frame at 0.6 s, Euler 0, Pose off. The pose is a nod, not a hold, and only fires as this
-         down-then-up pair: a single cold Euler does nothing and re-sending it every 2 s does nothing.
+  tilt:  BalanceStand, Pose on, Euler y=+0.3 (nose down, +15 deg at 0.7 s): frame look-down.jpg (the floor) at 0.7 s,
+         1.6 s total, Euler y=-0.3 (nose up, -15 deg from 0.36 s to 0.79 s): frame look-tilt.jpg (the room) at 0.6 s,
+         Euler 0, Pose off. Two frames per nod, both with the IMU pitch; the vision model picks the one to send. The
+         pose is a nod, not a hold, and only fires as this down-then-up pair: a single cold Euler does nothing and
+         re-sending it every 2 s does nothing.
   sit:   Sit, 1.8 s, frame at 48 deg up, RiseSit.
 Frames land in ~/Pictures/wtdd/look-<kind>.jpg (the API serves them at /pictures/<name>). snapshot() is the
 un-receipted newest frame behind GET /dog/frame.jpg, the remote's live view at a few frames per second. lidar(on) is
@@ -368,12 +370,14 @@ class DogSession:
 
     async def _look(self, b: Body, kind: str) -> dict[str, Any]:
         """The looks. The tilt nod is verified by the IMU at capture: below TILT_MIN_DEG it did not fire (this dog
-        sometimes ignores the pair after a long idle, and refuses Pose with code 401001 right after driving), so the
-        routine settles the controller (StopMove, BalanceStand), and on a miss warms it with StandUp and tries once
-        more. The returned pitch_deg is what the IMU measured; a miss is reported as fired=False, never hidden."""
+        sometimes ignores the pair after a long idle), so the routine settles the controller (StopMove, BalanceStand)
+        and on a miss warms it with StandUp and tries once more. Pose refused with code 401001 (after the physical
+        controller drove it, or after being carried; StandUp and BalanceStand do not clear it) is cured by Sit then
+        RiseSit, once. The returned pitch_deg is what the IMU measured; a miss is reported as fired=False, never hidden."""
         out = PICTURES / f"look-{kind}.jpg"
+        out_down = PICTURES / "look-down.jpg"
         with step("dog", "dog.look", "unitree", {"kind": kind}, b.state()) as r:
-            attempts, pitch = 0, 0.0
+            attempts, pitch, pitch_down = 0, 0.0, None
             if kind == "level":
                 await b.cmd("BalanceStand"); await asyncio.sleep(0.8)
                 pitch = self._pitch(b); await b.frame(out); attempts = 1
@@ -388,9 +392,22 @@ class DogSession:
                         await b.cmd("StandUp"); await asyncio.sleep(2.0)
                     await b.cmd("StopMove"); await asyncio.sleep(0.3)
                     await b.cmd("BalanceStand"); await asyncio.sleep(1.0)
-                    await b.cmd("Pose", {"flag": True}); await asyncio.sleep(0.5)
-                    await b.cmd("Euler", {"x": 0.0, "y": 0.3, "z": 0.0}); await asyncio.sleep(1.6)    # nod down
-                    await b.cmd("Euler", {"x": 0.0, "y": -0.3, "z": 0.0}); await asyncio.sleep(0.6)   # nod up, plateau
+                    try:
+                        await b.cmd("Pose", {"flag": True})
+                    except RuntimeError as e:   # 401001 after the controller drove it or it was carried: a sit and rise unlocks the pose (measured 2026-09-13 14:2x)
+                        if "401001" not in str(e) or attempts == 2:
+                            raise
+                        log("dog", "pose refused (401001): sitting and rising to unlock it, then retrying once")
+                        await b.cmd("Sit"); await asyncio.sleep(1.8)
+                        await b.cmd("RiseSit"); await asyncio.sleep(2.0)
+                        await b.cmd("BalanceStand"); await asyncio.sleep(1.0)
+                        await b.cmd("Pose", {"flag": True})
+                    await asyncio.sleep(0.5)
+                    await b.cmd("Euler", {"x": 0.0, "y": 0.3, "z": 0.0}); await asyncio.sleep(0.7)    # nod down: the floor at the +15 deg peak
+                    pitch_down = self._pitch(b)
+                    await b.frame(out_down)
+                    await asyncio.sleep(0.9)
+                    await b.cmd("Euler", {"x": 0.0, "y": -0.3, "z": 0.0}); await asyncio.sleep(0.6)   # nod up, plateau: the room
                     pitch = self._pitch(b)
                     await b.frame(out)
                     await b.cmd("Euler", {"x": 0.0, "y": 0.0, "z": 0.0}); await asyncio.sleep(0.8)
@@ -398,7 +415,8 @@ class DogSession:
                     if pitch <= -TILT_MIN_DEG:
                         break
             fired = kind != "tilt" or pitch <= -TILT_MIN_DEG
-            res = {"text": "here's what i see", "file": str(out), "kind": kind, "pitch_deg": pitch, "fired": fired, "attempts": attempts}
+            res = {"text": "here's what i see", "file": str(out), "kind": kind, "pitch_deg": pitch, "fired": fired, "attempts": attempts,
+                   "file_down": str(out_down) if pitch_down is not None else None, "pitch_down_deg": pitch_down}
             r["state_after"] = res
             log("dog", f"look {kind}", pitch=pitch, fired=fired, attempts=attempts)
             return res

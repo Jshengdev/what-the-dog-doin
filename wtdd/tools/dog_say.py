@@ -1,6 +1,7 @@
 """Look and say: the dog nods and photographs (dog_look, tilt by default), the frame goes to the vision model, and the
 one sentence plus the photo are posted to the castle behind the gate and the never-twice claim. Returns the look's
-fields (file, pitch_deg, fired, attempts), text, person, out_of_place, baseline, model, vision_ms and the confirmed
+fields (file_up, file_down, pitch_deg, pitch_down_deg, fired, attempts), text, person, out_of_place, pick (1 = the
+floor picture, 2 = the room), why, file (the picked one, the one posted), baseline, model, vision_ms and the confirmed
 post row. look_and_see() is the half without the post: the chat listener calls it and posts under the wake message's
 guid (say:<guid>), and sounds light_alarm when person is true.
 
@@ -18,12 +19,15 @@ ARGS = {"look": {"type": "string", "default": "tilt", "doc": "tilt | level | sit
         "stop": {"type": "number", "default": None, "doc": "map stop index the dog is at (picks that stop's tidy baseline)"}}
 
 SYSTEM = (
-    "You are a robot dog's eyes on a night round of a shared house. Floor-level camera. Reply with JSON only: "
+    "You are a robot dog's eyes on a night round of a shared house. Floor-level camera. You get two pictures from one nod: "
+    "1 = looking down at the floor, 2 = looking up at the room. Reply with JSON only: "
     '{"say": <one casual sentence under 140 characters for the housemates\' group chat: what you see and anything out of '
     "place (cups, clothes, trash, bags on the floor); if a sock or clothes are on the floor ask whose they are; no "
     'adjectives, no dashes, no names of people, say "someone" if a person is in view>, '
-    '"person": <true if any person is in view, else false>, '
-    '"out_of_place": <a list of short names of the things out of place, [] if none>}. '
+    '"person": <true if any person is in view in either picture, else false>, '
+    '"out_of_place": <a list of short names of the things out of place, [] if none>, '
+    '"pick": <1 or 2: the picture to send to the group, the one that shows the thing out of place or the person; 2 if nothing is>, '
+    '"why": <under 60 characters: why that picture>}. '
     "If an image labeled tidy is given, it is the same spot when it was tidy: report only what is new or moved since."
 )
 MAX_CHARS = 140
@@ -42,9 +46,10 @@ def _part(file: str) -> dict:
     return {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()}}
 
 
-def see(file: str, baseline: str | None = None) -> dict:
-    """The frame at `file` (and the tidy baseline, if any) to the vision model. Returns {text, person, out_of_place,
-    model, ms}; raises on an empty or malformed reply (no canned sentence)."""
+def see(file: str, baseline: str | None = None, file_down: str | None = None) -> dict:
+    """The room frame at `file`, the floor frame at `file_down` (if the nod gave one) and the tidy baseline (if any) to
+    the vision model. Returns {text, person, out_of_place, pick (1 floor | 2 room), why, model, ms}; raises on an empty
+    or malformed reply (no canned sentence)."""
     import json
     import time
     from ..ledger import log
@@ -52,7 +57,9 @@ def see(file: str, baseline: str | None = None) -> dict:
     content = []
     if baseline:
         content += [{"type": "text", "text": "this is the spot when it was tidy:"}, _part(baseline)]
-    content += [{"type": "text", "text": "this is now. what do you see?"}, _part(file)]
+    if file_down:
+        content += [{"type": "text", "text": "picture 1, looking down at the floor:"}, _part(file_down)]
+    content += [{"type": "text", "text": ("picture 2, looking up at the room" if file_down else "this is now") + ". what do you see?"}, _part(file)]
     t0 = time.perf_counter()
     out = generate("watch", [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}],
                    max_tokens=160, temperature=0.3, response_format={"type": "json_object"})
@@ -62,6 +69,10 @@ def see(file: str, baseline: str | None = None) -> dict:
         text = " ".join(str(d["say"]).split())
         person = bool(d["person"])
         items = [str(x) for x in d.get("out_of_place") or []]
+        pick = int(d.get("pick") or 2) if file_down else 2
+        if pick not in (1, 2):
+            raise ValueError(f"pick must be 1 or 2, got {pick!r}")
+        why = " ".join(str(d.get("why") or "").split())[:80]
     except (ValueError, KeyError, TypeError) as e:
         raise RuntimeError(f"vision model reply is not the expected JSON ({type(e).__name__}: {e}): {raw[:160]!r}") from None
     if not text:
@@ -70,8 +81,8 @@ def see(file: str, baseline: str | None = None) -> dict:
         log("watch", f"WARN sentence {len(text)} chars, cut to {MAX_CHARS}")
         text = text[:MAX_CHARS].rsplit(" ", 1)[0]
     ms = round((time.perf_counter() - t0) * 1000)
-    log("watch", f"saw: {text}", person=person, out_of_place=len(items), baseline=bool(baseline), model=out["model"], ms=ms)
-    return {"text": text, "person": person, "out_of_place": items, "model": out["model"], "ms": ms}
+    log("watch", f"saw: {text}", person=person, out_of_place=len(items), pick=pick, why=why, baseline=bool(baseline), model=out["model"], ms=ms)
+    return {"text": text, "person": person, "out_of_place": items, "pick": pick, "why": why, "model": out["model"], "ms": ms}
 
 
 def tidy_path(look: str, stop: int | None = None) -> str:
@@ -91,8 +102,10 @@ def look_and_see(look: str = "tilt", stop: int | None = None) -> dict:
     # at that stop; delete the file to run without one (the model then judges the frame on its own, which is logged).
     tidy = tidy_path(look, stop)
     has = os.path.isfile(tidy)
-    seen = see(shot["file"], tidy if has else None)
-    return {**shot, **seen, "vision_ms": seen.pop("ms"), "stop": stop, "baseline": tidy if has else None}
+    seen = see(shot["file"], tidy if has else None, shot.get("file_down"))
+    files = {1: shot.get("file_down"), 2: shot["file"]}
+    return {**shot, **seen, "vision_ms": seen.pop("ms"), "stop": stop, "baseline": tidy if has else None,
+            "file_up": shot["file"], "file": files[seen["pick"]] or shot["file"]}   # file = the picture the model picked
 
 
 def run(look="tilt", trigger=None, baseline=False, stop=None):

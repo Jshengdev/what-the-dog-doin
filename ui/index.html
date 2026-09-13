@@ -121,7 +121,7 @@ function App() {
     const t = setInterval(() => fetch(`${API}/dog/state`).then(r => r.json()).then(d => { setDog(d); if (!drag.current) setDogDrag(null); }).catch(() => {}), 1000);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); clearInterval(t); };
   }, []);
-  const lookShot = async kind => { const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, file: out.result.file, pitch: out.result.pitch_deg, kind }); };
+  const lookShot = async kind => { const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
   const key = (k, label) => html`<button class="small" onPointerDown=${() => press(k)} onPointerUp=${() => release(k)} onPointerLeave=${() => release(k)}>${label}</button>`;
 
   // ---------- the run: the API walks the entity (wtdd/field.py) and drives the real lights; this page only draws GET /field
@@ -250,7 +250,7 @@ function App() {
             ${cmd("nod + say to castle", "dog_say", {}, { key: true, title: "nod, photo, one sentence from the vision model, posted with the photo" })}</div>
           <div class="cmd">${cli("dog_say", {})}</div>
           ${live && html`<img src=${live} onLoad=${() => next(150)} onError=${() => next(2000)} style=${{ width: "100%", borderRadius: 10, display: "block", marginBottom: 6 }}/>`}
-          ${photo && html`<div><img src=${photo.url} style=${{ width: "100%", borderRadius: 10, display: "block" }}/><div class="row"><span class="mono">${photo.kind} · pitch ${photo.pitch}°</span>${cmd("send to castle", "chat_post", { text: "dog's eye view", file: photo.file })}</div></div>`}
+          ${photo && html`<div>${photo.down ? html`<div style=${{ display: "flex", gap: 6 }}><img src=${photo.down} style=${{ width: "50%", borderRadius: 10 }}/><img src=${photo.url} style=${{ width: "50%", borderRadius: 10 }}/></div>` : html`<img src=${photo.url} style=${{ width: "100%", borderRadius: 10, display: "block" }}/>`}<div class="row"><span class="mono">${photo.kind}${photo.down ? ` · floor ${photo.pitchDown}° / room ${photo.pitch}°` : ` · pitch ${photo.pitch}°`}</span>${cmd("send room shot to castle", "chat_post", { text: "dog's eye view", file: photo.file })}</div></div>`}
         </div>
         <div class="panel">
           <h2>the eye · what it sees</h2>
@@ -264,10 +264,13 @@ function App() {
                 <div class="mono" style=${{ margin: "4px 0 8px" }}>detector · ${watch.model} · ${Object.entries(watch.classes || {}).map(([k, v]) => `${k} ×${v}`).join(" · ") || "nothing in view"} · ${watch.ms} ms</div>`
                 : html`<div class="mono" style=${{ margin: "0 0 8px" }}>detector off · python -m wtdd.watch</div>`}
               ${seen ? html`<div class="row" style=${{ alignItems: "flex-start" }}>
-                <img src=${`/pictures/look-tilt.jpg?t=${seen.ts}`} style=${{ width: 160, borderRadius: 8 }}/>
+                <div style=${{ display: "flex", gap: 6 }}>
+                  ${look?.state_after?.file_down && html`<div><img src=${`/pictures/look-down.jpg?t=${seen.ts}`} style=${{ width: 120, borderRadius: 8, outline: said?.pick === 1 ? "3px solid var(--live, #0b0dc4)" : "none" }}/><div class="mono">1 floor${said?.pick === 1 ? " · sent" : ""}</div></div>`}
+                  <div><img src=${`/pictures/look-tilt.jpg?t=${seen.ts}`} style=${{ width: 120, borderRadius: 8, outline: said?.pick !== 1 ? "3px solid var(--live, #0b0dc4)" : "none" }}/><div class="mono">2 room${said?.pick !== 1 ? " · sent" : ""}</div></div>
+                </div>
                 <div style=${{ flex: 1, minWidth: 180 }}>
                   <div>${said ? said.say : seen.response_or_error}</div>
-                  <div class="mono" style=${{ marginTop: 4 }}>${seen.ts.slice(11)} · ${seen.args?.model} · ${seen.latency_ms} ms${said ? ` · person ${said.person} · out of place: ${(said.out_of_place || []).join(", ") || "none"}` : ""}${look?.state_after?.pitch_deg != null ? ` · pitch ${look.state_after.pitch_deg}°` : ""}</div>
+                  <div class="mono" style=${{ marginTop: 4 }}>${seen.ts.slice(11)} · ${seen.args?.model} · ${seen.latency_ms} ms${said ? ` · person ${said.person} · out of place: ${(said.out_of_place || []).join(", ") || "none"}${said.why ? ` · pick: ${said.why}` : ""}` : ""}${look?.state_after?.pitch_deg != null ? ` · pitch ${look.state_after.pitch_deg}°` : ""}</div>
                 </div></div>` : html`<div class="hint">no look yet · python -m wtdd dog_say</div>`}`;
           })()}
         </div>
