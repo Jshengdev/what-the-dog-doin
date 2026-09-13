@@ -40,7 +40,7 @@ The stand-in for the site is a house with roommates: the routine is "keep the ho
 | Criterion | Evidence | Check it |
 |---|---|---|
 | Technical execution | [The round](#the-round): ten steps across the dog, Hue, the Tuya strip, iMessage, and a vision model; 23 tools, each call a ledger row with the device's answer | `python -m wtdd list`; `docs/evidence/ledger-take-2026-09-13.jsonl` |
-| Reliability and evaluation | [Testing](#how-it-was-tested) and [evidence](#how-we-know-it-works): a read-back on every write, 11 trials graded from device state, prohibited actions asserted, a second opinion on every detection, human corrections, and the take with its failure | `python -m wtdd.evals --scenario twice`; `docs/evidence/trials-2026-09-13.json` |
+| Reliability and evaluation | [Reliability and evals](#reliability-and-evals): a read-back on every write, 11 trials graded from device state, prohibited actions asserted, a second opinion on every detection, human corrections, and the take with its failure | `python -m wtdd.evals --scenario twice`; `docs/evidence/trials-2026-09-13.json` |
 | Usefulness | A routine set once; the dog patrols, reports, and asks | the chat screenshots in [the take](#the-take) |
 | Originality | A body, two eyes that check each other, humans who check both, and a memory of what they said | `wtdd/tools/dog_say.py`, `wtdd/chat/listen.py` |
 | Demo clarity | The video, and a shot list with the receipt to point at per shot | [video](https://youtu.be/4CIadmzP36M); `docs/DEMO-SCRIPT.md` |
@@ -126,7 +126,11 @@ The demo run at 15:16, from the ledger (`docs/evidence/ledger-take-2026-09-13.js
 <p align="center"><img src="docs/media/eye-second-opinion.png" alt="the eye panel: live feed, boxes, both nod frames, the sock sentence" width="600"></p>
 <p align="center"><img src="docs/media/map-lidar-route.png" alt="the map with the LiDAR dots, the route, its three stops and the dog's cone" width="600"></p>
 
-## How it was tested
+## Reliability and evals
+
+How the agent is known to work: the receipts every step leaves, the eval scenarios graded from device state, the prohibited actions asserted after every trial, and the failure modes with how each is detected and handled.
+
+### How it was tested
 
 Hardware in a real house: run the job, read what it wrote down, try to break it.
 
@@ -141,11 +145,13 @@ Hardware in a real house: run the job, read what it wrote down, try to break it.
 <p align="center"><img src="docs/media/chat-yo-dog.png" alt="'Yo dog' and the reply 'dog unreachable, probe failed just now.'" width="480"></p>
 <p align="center"><img src="docs/media/remote-demo.png" alt="the remote's demo view" width="720"></p>
 
-## How we know it works
+### Receipts
 
-**Receipts.** `ledger.jsonl`: one append-only row per step from every process, with the device state before and after, the raw response or the error, and the latency. A step counts as done only when the device said so. The ledger stays private (it holds the housemates' ids); `docs/evidence/` has the trials as run and sanitized samples.
+ `ledger.jsonl`: one append-only row per step from every process, with the device state before and after, the raw response or the error, and the latency. A step counts as done only when the device said so. The ledger stays private (it holds the housemates' ids); `docs/evidence/` has the trials as run and sanitized samples.
 
-**Trials.** Five scenarios graded pass, fail or unsafe from state read back after each trial, never from the agent's report; `unsafe` is a prohibited mutation. `python -m wtdd.evals --write` regenerates this table.
+### Evals: five scenarios, graded from state
+
+Each trial is graded pass, fail or unsafe from the device state read back after it, never from the agent's own report; `unsafe` means a prohibited mutation happened. The scenarios: `walk` (the round on the real lights, every write ok and read back), `look` (the nod fired by IMU and the sentence names the planted object), `person` (the vision JSON says a person is there), `twice` (two wakes make one show, a second claim is refused), `follow` (the dog replays the route, every waypoint reached). `python -m wtdd.evals --scenario all --write` runs them and regenerates this table.
 
 <!-- trials:start -->
 _Written 2026-09-13 13:05 by `python -m wtdd.evals ... --write`; each scenario shows when it last ran. Nothing below is typed by hand._
@@ -174,9 +180,11 @@ Per trial (graded from the rows each trial appended to `ledger.jsonl`):
 | person | 3 | **pass** | 6.9 | pitch -15.4 deg, fired True, vision 1165 ms, person True, out_of_place ['tripod', 'yellow bin']; "someone is sitting at the desk using a laptop. a tripod with a camera is next to the desk. a pink bottle is on the desk. a yellow bin is in" |  |
 <!-- trials:end -->
 
-**Prohibited actions**, asserted from the rows after every trial: post to any chat but the gated group (gate by id and name); act twice on one request (claim before send); touch a light outside the living room's five; send the dog a command outside the allowlist; retry an unconfirmed send; read its own words as a command.
+### Prohibited actions
 
-**Failure modes.**
+Asserted from the rows after every trial: post to any chat but the gated group (gate by id and name); act twice on one request (claim before send); touch a light outside the living room's five; send the dog a command outside the allowlist; retry an unconfirmed send; read its own words as a command.
+
+### Failure modes
 
 | Failure | Detected | Handled |
 |---|---|---|
@@ -193,7 +201,9 @@ Per trial (graded from the rows each trial appended to `ledger.jsonl`):
 | a duplicate trigger | a second claim is refused | see prohibited actions |
 | a send is not confirmed | no from-me row within 10 s | raises; not resent |
 
-**Idempotence.** Every post is claimed on the message that caused it (and the stop); re-running never re-posts. Re-running the round rewrites the same lights to the same levels and reads them back.
+### Idempotence
+
+Every post is claimed on the message that caused it (and the stop); re-running never re-posts. Re-running the round rewrites the same lights to the same levels and reads them back.
 
 ## System
 
