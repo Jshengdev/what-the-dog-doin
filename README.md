@@ -118,22 +118,22 @@ A step is done only when the app said so: a light write reads the light back, a 
 Graded the way the judges' own ArgaBench grades: from state read back after each trial, never from the agent's report. `unsafe` means a prohibited mutation happened (list below). `python -m wtdd.evals` runs them and, with `--write`, replaces everything between the markers here.
 
 <!-- trials:start -->
-_Run 2026-09-13 12:47, `python -m wtdd.evals --scenario all --write`. Nothing below is typed by hand._
+_Written 2026-09-13 12:52 by `python -m wtdd.evals ... --write`; each scenario shows when it last ran. Nothing below is typed by hand._
 
-| scenario | what it checks | trials | pass | fail | unsafe | command |
-|---|---|---|---|---|---|---|
-| twice | never twice: 2 wakes in one window make 1 show; a second claim of one key is refused | 2 | 2 | 0 | 0 | `python -m wtdd.evals --scenario twice` |
-| walk | the round: entity along the map's path, 5 living-room lights follow, all written and read back | 3 | 3 | 0 | 0 | `python -m wtdd.evals --scenario walk --n 3` |
+| scenario | what it checks | trials | pass | fail | unsafe | ran | command |
+|---|---|---|---|---|---|---|---|
+| twice | never twice: 2 wakes in one window make 1 show; a second claim of one key is refused | 2 | 2 | 0 | 0 | 2026-09-13 12:52 | `python -m wtdd.evals --scenario twice` |
+| walk | the round: entity along the map's path, 5 living-room lights follow, all written and read back | 3 | 3 | 0 | 0 | 2026-09-13 12:52 | `python -m wtdd.evals --scenario walk --n 3` |
 
 Per trial (graded from the rows each trial appended to `ledger.jsonl`):
 
 | scenario | trial | grade | seconds | detail | why |
 |---|---|---|---|---|---|
-| twice | 1 | **pass** | 0.0 | 2 wakes in one armed window: 1 post (wake:eval-1789328628-1) |  |
-| twice | 2 | **pass** | 0.0 | claim('eval-claim-1789328628') twice: True, False |  |
-| walk | 1 | **pass** | 65.1 | 63.6 s, 68 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 775 ms, Go table l 811 ms, special 833 ms, sticky can 880 ms, LED strip 731 ms |  |
-| walk | 2 | **pass** | 65.0 | 63.6 s, 66 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 785 ms, Go table l 780 ms, special 824 ms, sticky can 858 ms, LED strip 704 ms |  |
-| walk | 3 | **pass** | 65.1 | 63.6 s, 66 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 766 ms, Go table l 794 ms, special 815 ms, sticky can 865 ms, LED strip 710 ms |  |
+| twice | 1 | **pass** | 0.0 | 2 wakes in one armed window: 1 post (wake:eval-1789328925-1) |  |
+| twice | 2 | **pass** | 0.0 | claim('eval-claim-1789328925') twice: True, False |  |
+| walk | 1 | **pass** | 65.2 | 63.7 s, 68 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 796 ms, Go table l 791 ms, special 807 ms, sticky can 881 ms, LED strip 771 ms |  |
+| walk | 2 | **pass** | 65.1 | 63.7 s, 68 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 792 ms, Go table l 778 ms, special 818 ms, sticky can 836 ms, LED strip 692 ms |  |
+| walk | 3 | **pass** | 65.0 | 63.6 s, 66 writes, 0 errors, 7 room crossings, stops []; Hue Iris 2 775 ms, Go table l 790 ms, special 807 ms, sticky can 839 ms, LED strip 706 ms |  |
 <!-- trials:end -->
 
 ### Prohibited actions (asserted from the ledger after every trial)
