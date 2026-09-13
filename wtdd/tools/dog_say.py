@@ -22,7 +22,7 @@ ARGS = {"look": {"type": "string", "default": "tilt", "doc": "tilt | level | sit
 SYSTEM = (
     "You are a robot dog's eyes on a night round of a shared house. Floor-level camera. You get two pictures from one nod: "
     "1 = looking down at the floor, 2 = looking up at the room. Reply with JSON only: "
-    '{"say": <one casual sentence under 140 characters for the housemates\' group chat: what you see and anything out of '
+    '{"say": <one casual sentence, under 200 characters, for the housemates\' group chat: what you see and anything out of '
     "place (cups, clothes, trash, bags on the floor); if a sock or clothes are on the floor ask whose they are; no "
     'adjectives, no dashes, no names of people, say "someone" if a person is in view>, '
     '"person": <true if any person is in view in either picture, else false>, '
@@ -35,8 +35,10 @@ SYSTEM = (
     "Say only what is in the pictures: if there are no socks, no clothes, no cups, do not mention them. When something "
     "that is there clearly belongs to someone (clothes, a sock, a cup left out), guess an owner by first name from the "
     "housemates list if one is given, casually ('probably <name>'s'), and fold the detector_check clause into say when "
-    "it is not 'agree'."
+    "it is not 'agree'. A cup, mug, glass or bottle left out gets one witty line of public shaming: what kind it is, who "
+    "probably drank from it, and what they should do with it now. Socks or clothes on the floor: ask whose they are."
 )
+MAX_SAY = 200   # the witty lines run longer than a report; over this the sentence is cut at a word
 MAX_CHARS = 140
 WIDTH = 640
 PICTURES = "~/Pictures/wtdd"
@@ -97,9 +99,9 @@ def see(file: str, baseline: str | None = None, file_down: str | None = None, la
         raise RuntimeError(f"vision model reply is not the expected JSON ({type(e).__name__}: {e}): {raw[:160]!r}") from None
     if not text:
         raise RuntimeError(f"vision model returned an empty sentence (model={out['model']})")
-    if len(text) > MAX_CHARS:
-        log("watch", f"WARN sentence {len(text)} chars, cut to {MAX_CHARS}")
-        text = text[:MAX_CHARS].rsplit(" ", 1)[0]
+    if len(text) > MAX_SAY:
+        log("watch", f"WARN sentence {len(text)} chars, cut to {MAX_SAY}")
+        text = text[:MAX_SAY].rsplit(" ", 1)[0]
     ms = round((time.perf_counter() - t0) * 1000)
     log("watch", f"saw: {text}", person=person, out_of_place=len(items), pick=pick, why=why, check=check, baseline=bool(baseline), model=out["model"], ms=ms)
     if labels is not None:   # the second opinion as its own receipt: what the detector said vs what the model saw

@@ -140,7 +140,7 @@ function App() {
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); clearInterval(t); };
   }, []);
   const markIf = (look, say) => { if (dog?.rec) post("/dog/mark", { look, say }).then(r => r.json()).then(setLast); };   // recording: the action is part of the route
-  const lookShot = async kind => { markIf(kind, false); const out = await run("dog_look", { look: kind }); if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
+  const lookShot = async kind => { markIf(kind, true); const out = await run("dog_look", { look: kind });   // recording: this look, and a report, at this stop if (out.ok) setPhoto({ url: `${API}/pictures/look-${kind}.jpg?t=${out.result.pitch_deg}-${Math.floor(performance.now())}`, down: out.result.file_down ? `${API}/pictures/look-down.jpg?t=${Math.floor(performance.now())}` : null, file: out.result.file, pitch: out.result.pitch_deg, pitchDown: out.result.pitch_down_deg, kind }); };
   const key = (k, label) => html`<button class="small" onPointerDown=${() => press(k)} onPointerUp=${() => release(k)} onPointerLeave=${() => release(k)}>${label}</button>`;
 
   // ---------- the run: the API walks the entity (wtdd/field.py) and drives the real lights; this page only draws GET /field
@@ -230,7 +230,8 @@ function App() {
           ${!admin && html`<div class="row tight">
             <button class=${"small" + (dog?.rec ? " on" : "")} disabled=${!dog?.calibrated} onClick=${() => post("/dog/record", { on: !dog?.rec }).then(r => r.json()).then(o => { setLast(o); if (o.ok && o.rec && !o.rec.active) fetch("/map").then(r => r.json()).then(setMap); })}>${dog?.rec ? `stop & save route (${dog.rec.n} pts)` : "record route"}</button>
             ${dog?.rec && html`<button class="small" title="a stop with the default action: nod, photo, sentence to the castle" onClick=${() => post("/dog/mark", { look: "tilt", say: true }).then(r => r.json()).then(setLast)}>mark stop here (${dog.rec.marks.length})</button>`}
-            <button class="small key" disabled=${busy !== null} title=${dog?.rec ? "recording: also marks this spot with 'nod + photo'" : ""} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button>
+            <button class="small key" disabled=${busy !== null} title=${dog?.rec ? "recording: marks this spot: nod (floor + room frames) and report" : ""} onClick=${() => lookShot("tilt")}>${busy === "dog_look" ? "…" : "nod + photo"}</button>
+            ${dog?.rec && html`<button class="small" title="recording: marks this spot: level look (a table, cups) and report" onClick=${() => lookShot("level")}>level photo</button><button class="small" title="recording: marks this spot: sit look, 48 degrees up (a face) and report" onClick=${() => lookShot("sit")}>sit photo (look up)</button>`}
             <span><button class="small key" disabled=${busy !== null} onClick=${() => { markIf("tilt", true); run("dog_say", {}); }}>${busy === "dog_say" ? "…" : "nod + say to castle"}</button></span>
             <button class=${"small" + (watch?.intruder ? " on" : "")} title="while on, a person the detector sees for a few frames triggers the photo, STRANGER DANGER to the castle and red/blue on the room" onClick=${() => post("/intruder", { on: !watch?.intruder }).then(r => r.json()).then(setLast)}>${watch?.intruder ? "intruder watch ON" : "intruder watch off"}</button>
             ${cmd("stranger alarm now", "intruder_alarm", {})}
@@ -244,7 +245,7 @@ function App() {
             <polyline class="path" points=${map.path.map(p => p.join(",")).join(" ")}/>
             ${map.path.map((p, i) => { const st = (map.stops || []).includes(i); return html`<g key=${"p" + i}>
               <circle class=${"pt" + (st ? " stop" : "")} cx=${p[0]} cy=${p[1]} r=${st ? 12 : 7} onPointerDown=${mode === "path" ? (e => e.stopPropagation()) : onDown("path", i, 0)} onClick=${e => { e.stopPropagation(); if (mode === "path") deletePoint(i); }} onDoubleClick=${e => { e.stopPropagation(); if (mode !== "path") toggleStop(i); }}/>
-              ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}${(map.actions || {})[i] ? ` · ${(map.actions || {})[i].look}${(map.actions || {})[i].say ? " + say" : " photo"}` : ""}</text>`}</g>`; })}
+              ${st && html`<text class="lbl" x=${p[0] + 16} y=${p[1] + 6}>stop ${(map.stops || []).indexOf(i) + 1}${(map.actions || {})[i] ? ` · ${({ tilt: "nod", level: "level", sit: "look up" })[(map.actions || {})[i].look] || (map.actions || {})[i].look}${(map.actions || {})[i].say ? " + report" : " photo"}` : ""}</text>`}</g>`; })}
             ${(map.lights || []).map((L, li) => {
               const lv = levels[L.id] || 0;
               if (L.kind === "line") return html`<g key=${L.id}>
