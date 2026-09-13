@@ -1,6 +1,5 @@
 """Make one physical light announce itself so the map marker can be matched to it: a Hue lamp blinks (native on_off
 signal) for a few seconds; the strip dips to 5 percent and back. Read back."""
-NAME, DOC = "identify", __doc__.strip()
 ARGS = {"light": {"type": "string", "default": "special", "doc": "Hue light name/id, or 'strip'"},
         "seconds": {"type": "number", "default": 3}}
 

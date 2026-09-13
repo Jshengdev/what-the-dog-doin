@@ -1,5 +1,21 @@
-"""The mouth: osascript sends, gated to the one test group, confirmed by reading the from-me row back.
-AppleScript shapes and escape rules verbatim from docs/CHAT.md. No retries, ever: real people are on the other end."""
+"""The mouth: osascript sends to the ONE allowed group, each confirmed by reading the dog's own from-me row back.
+
+wtdd.chat.__main__.post is the caller: it runs the target gate and the never-twice claim first, each as its own ledger
+row (chat.gate, chat.claim), then wraps the send in a chat.post row. send_text and send_file ALSO call gate() as their
+first statement, so a direct caller (a future tool, the agent loop, a REPL) can never reach osascript past the gate;
+the second check is one read-only chat.db lookup. No retries, ever: real people are on the other end, and an
+unconfirmed send raises instead of sending again.
+
+The gate (gate()): guid == WTDD_CHAT_GUID AND chat.db's display_name for that guid == TARGET_NAME. TARGET_NAME is
+WTDD_CHAT_NAME from .env, default "wtdd test" (the build-night test group). On 2026-09-13 Johnny set it to "THE CASTLE",
+the real housemates group (8 members), on purpose; test_chat.Gate pins that choice. Both checks must hold, so a guid
+pointed at any other chat, or a renamed chat, is refused with a PermissionError before anything is claimed or sent.
+
+Verified on this Mac (2026-09-13): AppleScript `chat id "<guid>"` resolves the chat.db guid directly (Automation
+permission for Messages is granted to the terminal). A file send is `POSIX file "<path>" as alias` and the file has to
+sit under ~/Pictures/wtdd (sandboxed Messages.app can read there), so stage() copies it in first; a caption goes in the
+same script after `delay 3` and is confirmed as a second from-me row above the file row. Text and guid are escaped for
+AppleScript string literals (backslash first, then double quote). osascript gets 30 s; rc != 0 raises."""
 from __future__ import annotations
 import shutil
 import subprocess
@@ -11,8 +27,7 @@ from .. import config
 from ..ledger import log
 from . import db
 
-# wtdd: the only display name this module will ever send to. Demo day: change this constant on purpose, never via env.
-TARGET_NAME = config.maybe("WTDD_CHAT_NAME") or "wtdd test"  # wtdd: the ONE group this process may ever post to; both guid and name must match
+TARGET_NAME = config.maybe("WTDD_CHAT_NAME") or "wtdd test"   # wtdd: the ONE group this process may post to; guid AND name must match
 PICTURES = Path("~/Pictures/wtdd").expanduser()
 CONFIRM_S = 10.0
 
@@ -64,7 +79,7 @@ def _osascript(script: str) -> None:
 
 
 def send_text(guid: str, text: str) -> dict[str, Any]:
-    """Gate, send, confirm. Returns the confirmed from-me row {guid, rowid, ts} or raises."""
+    """Gate, send, then confirm. Returns the confirmed from-me row {guid, rowid, ts} or raises."""
     gate(guid)
     watermark = db.max_rowid()
     _osascript(script_text(guid, text))

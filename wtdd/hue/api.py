@@ -1,6 +1,25 @@
-"""HueBridge: CLIP v2 over HTTPS on the LAN. Every network call runs inside wtdd.ledger.step and every PUT is
-followed by a GET read-back that lands in state_after. Request shapes: docs/SETUP.md section 2a and the openhue
-OpenAPI mirror (src/light/schemas/LightPut.yaml, src/common/Signaling.yaml, src/auth/auth.yaml).
+"""HueBridge: Philips Hue CLIP v2 client. One ledger row per network call; every PUT is followed by a GET read-back
+that must match the request (_matches) or the row fails and the call raises.
+
+Local: https://<HUE_BRIDGE_IP>/clip/v2/... with the hue-application-key header over the bridge's self-signed cert
+(verify=False, LAN only, logged once). Remote: the same paths under https://api.meethue.com/route with an OAuth
+bearer token (HUE_REMOTE_TOKEN): slower, works from any network, and the route this repo runs in practice because
+the bridge (10.66.1.109) sits on a different subnet than this Mac (10.66.10.0/24). from_env() picks remote whenever
+HUE_REMOTE_TOKEN is set.
+
+Verified on the real bridge 2026-09-13 (id 001788FFFE616851 "Hue Bridge Car", sw 1978293000, apiversion 1.78.0,
+7 lights, 4 of them in the living room):
+- PUT /clip/v2/resource/light/<id> bodies: {"on": {"on": bool}}, {"dimming": {"brightness": 0..100}},
+  {"color": {"xy": {"x", "y"}}}, {"signaling": {"signal": "alternating", "duration": ms, "colors": [{"xy": {...}}]}}.
+  The read-back shows signaling.status.signal == "alternating"; a light lists what it accepts in signaling.signal_values.
+  The bridge answers {"errors": [], "data": [{"rid", "rtype"}]}; a non-empty errors list is a failure even on HTTP 200.
+- Pairing: POST /api {"devicetype", "generateclientkey": true} answers [{"error": {"type": 101, "description": "link
+  button not pressed"}}] until the button is pressed, then [{"success": {"username", "clientkey"}}]. On the cloud
+  route PUT /api/0/config {"linkbutton": true} presses it.
+- Rate: Hue's guidance is about 10 light commands per second and 1 grouped_light per second (PUT_GAP_S). Measured on
+  the cloud route: 15 of 15 back-to-back sets ok, no 429, median 794 ms; about 0.8 s per set including the read-back.
+- Discovery (https://discovery.meethue.com/) returns [{"id", "internalipaddress", "port"}] and rate-limits: HTTP 429
+  after repeated probes, so probe treats it as informational once HUE_BRIDGE_IP is set.
 """
 from __future__ import annotations
 import json
@@ -11,18 +30,19 @@ from typing import Any
 import requests
 import urllib3
 
-from .. import ledger
+from .. import config, ledger
 
 AGENT, APP = "lights", "hue"
 DISCOVERY_URL = "https://discovery.meethue.com/"
+REMOTE_BASE = "https://api.meethue.com/route"
+OAUTH = "https://api.meethue.com/v2/oauth2"
 RED_XY, BLUE_XY = (0.675, 0.322), (0.167, 0.04)
-# Hue guidance (SETUP.md 2a.5): about 10 light commands per second, 1 grouped_light per second.
 PUT_GAP_S = {"light": 0.1, "grouped_light": 1.0}
 
 
 def raw(x: Any) -> str:
-    """response_or_error is stored as a compact JSON string: it is the raw response, never a summary, and
-    wtdd.ledger.step slices it for the log line (a dict there raises KeyError inside the step's finally)."""
+    """response_or_error is stored as compact JSON: the raw response, never a summary. wtdd.ledger.step slices it
+    for the log line."""
     return json.dumps(x, separators=(",", ":"), default=str)
 
 
@@ -62,7 +82,8 @@ def tcp_open(ip: str, port: int = 443, timeout: float = 3.0) -> float:
 
 
 def summary(light: dict[str, Any]) -> dict[str, Any]:
-    """The compact state that goes into state_before and state_after."""
+    """The compact state that goes into state_before and state_after. Keys on/brightness/xy/signal are a contract:
+    tools/lights_status.py spreads them into every hue row and ui/index.html reads on and brightness."""
     xy = light.get("color", {}).get("xy")
     return {"on": light.get("on", {}).get("on"),
             "brightness": light.get("dimming", {}).get("brightness"),
@@ -70,16 +91,10 @@ def summary(light: dict[str, Any]) -> dict[str, Any]:
             "signal": light.get("signaling", {}).get("status", {}).get("signal")}
 
 
-REMOTE_BASE = "https://api.meethue.com/route"
-OAUTH = "https://api.meethue.com/v2/oauth2"
-
-
 class HueBridge:
     _warned = False
 
     def __init__(self, ip: str, key: str | None = None, timeout: float = 5.0, remote_token: str | None = None):
-        """Local: https://<ip> with a self-signed cert. Remote: Hue's cloud route with an OAuth bearer token; same paths,
-        same app key header, slower round trips, works from any network."""
         self.ip, self.key, self.timeout = ip, key, timeout
         self.remote = bool(remote_token)
         self.s = requests.Session()
@@ -99,10 +114,8 @@ class HueBridge:
     @classmethod
     def from_env(cls, key_required: bool = True) -> "HueBridge":
         """Remote when HUE_REMOTE_TOKEN is set, else local via HUE_BRIDGE_IP."""
-        from .. import config
         key = config.get("HUE_APP_KEY") if key_required else config.maybe("HUE_APP_KEY")
-        token = config.maybe("HUE_REMOTE_TOKEN")
-        return cls(config.maybe("HUE_BRIDGE_IP") or "api.meethue.com", key, remote_token=token)
+        return cls(config.maybe("HUE_BRIDGE_IP") or "api.meethue.com", key, remote_token=config.maybe("HUE_REMOTE_TOKEN"))
 
     # one HTTP call; maps bad key, rate limit, and connection failures to HueError; never retries
     def _req(self, method: str, path: str, body: Any = None, auth: bool = True) -> Any:
@@ -200,10 +213,9 @@ class HueBridge:
             raise ValueError("set: nothing to set (on, bri, or xy)")
         return self._put_light(rid, "lights.set", body)
 
-    def signal(self, rid: str, seconds: float, colors: list[tuple[float, float]] = (RED_XY, BLUE_XY)) -> dict[str, Any]:
-        """Native `alternating` signal between two xy colors for `seconds`. Field shape verified on the real bridge
-        2026-09-13 (Hue Bridge Car, sw 1978293000): `signaling: {signal, duration, colors: [{xy}]}`; read-back shows
-        `signaling.status.signal == "alternating"`. One PUT, one ledger row."""
+    def signal(self, rid: str, seconds: float, colors=(RED_XY, BLUE_XY)) -> dict[str, Any]:
+        """Native `alternating` signal between two xy colors for `seconds`. Refused after one read when the light does
+        not list `alternating` in signal_values. One PUT, one ledger row."""
         supported = self.read(rid).get("signaling", {}).get("signal_values", [])
         if "alternating" not in supported:
             raise HueError(f"light {rid[:8]} does not support signal alternating (signal_values={supported})")
@@ -212,6 +224,8 @@ class HueBridge:
         return self._put_light(rid, "lights.signal", {"signaling": {"signal": "alternating", "duration": duration, "colors": pts}})
 
     def _put_light(self, rid: str, tool: str, body: dict[str, Any]) -> dict[str, Any]:
+        """The one write path: before, throttle, PUT, read back, match. Also called directly by tools/identify.py
+        with tool 'lights.identify' and a signaling on_off body."""
         before = summary(self._get_light(rid))
         with ledger.step(AGENT, tool, APP, {"id": rid, **body}, before) as r:
             self._throttle("light")

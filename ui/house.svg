@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 1540" font-family="'IBM Plex Mono', ui-monospace, monospace">
   <!-- The Castle, first floor. Drawn from the listing plan: rooms as simple rectangles, proportions kept, no furniture.
-       Coordinates are the shared map space for map.json (path, zones) and the dot. -->
+       Coordinates are the shared map space for map.json (path, lights, rooms) and the dot; hit-testing uses map.json rooms, this file is decoration. -->
   <defs>
     <style>
       .room { fill: #f6f3ec; stroke: #262323; stroke-width: 4; stroke-linejoin: miter; }

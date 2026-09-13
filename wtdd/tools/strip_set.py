@@ -1,9 +1,7 @@
 """Tuya strip on/off with optional brightness percent, read back (the strip half of a zone)."""
-NAME, DOC = "strip_set", __doc__.strip()
 ARGS = {"on": {"type": "boolean", "default": True}, "percent": {"type": "number", "default": None}}
 
 
 def run(on=True, percent=None):
     from ..tuya.__main__ import strip
-    on = on if isinstance(on, bool) else str(on).lower() in ("1", "true", "on", "yes")
-    return strip(on=on, bri=(float(percent) if (percent is not None and on) else None))
+    return strip(on=on, bri=float(percent) if (percent is not None and on) else None)

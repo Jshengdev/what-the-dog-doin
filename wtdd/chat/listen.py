@@ -1,6 +1,20 @@
-"""The ears. A wake phrase from a housemate arms the dog for a window; while armed, messages are matched against the
-command list and run. Every wake, command, ack, and result is a ledger row; every post goes through the gate and the
-never-twice claim keyed on the message that caused it."""
+"""The ears' state machine: a wake phrase arms the dog for listen_s; while armed, messages are matched against the
+command list and run; "stop" disarms. Every wake, command, and ask is a ledger row (chat.wake / chat.command /
+chat.ask); every post goes through __main__.post keyed on the guid of the message that caused it
+(wake:/fire:/doin:/done:/ack:/res:/stop:/ai:<guid>), so a re-read message can never post twice.
+
+Run: python -m wtdd.chat listen [--dry-run] [--every 2] [--listen-s 120] [--once]
+     python -m wtdd.chat simulate "what the dog doin" "lights off" "stop"   (dry-run posts, REAL commands)
+
+Facts. No replay at boot: the watermark starts at MAX(ROWID). WTDD_LISTEN_S (default 120) is the armed window and any
+recognized message re-arms it. Who may wake the dog: any member while HOUSEMATES is empty (one WARN), else the listed
+handles; from-me rows only with WTDD_ALLOW_SELF=1 (Johnny's phone shares the dog's account), and even then the dog's
+own posts are refused by confirmed guid and by the opening words of its replies. WTDD_WAKE_SHOW=1 makes a wake run the
+demo in Johnny's order (dog_on_fire picture, "dog doin", walk_path, "dog done") instead of a text ack. WTDD_AGENT=1
+sends an armed message that is not a fixed command to wtdd.agent.ask with the chat context. A failed command is
+reported to the group as its class and message, never faked. Live wake demo receipt (2026-09-13 03:0x, in
+docs/RELIABILITY-BRIEF.md): "what teh dog doin" recognized at 0.94, picture 3.4 s, walk 63.6 s, 3 posts, 3 read-back
+guids, 0 duplicates."""
 from __future__ import annotations
 import time
 from typing import Any, Callable
@@ -13,6 +27,12 @@ from .housemates import HOUSEMATES, name as hname
 from .triggers import commands as command_list, is_wake, match_command, wake_phrases
 
 Poster = Callable[[str, str, str, str | None, str | None], Any]   # (guid, trigger_key, kind, text, file)
+OWN_OPENERS = ("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "ok, done listening",
+               "living room lights", "did:", "listening for")   # how the dog's own text posts begin
+
+
+def _flag(key: str) -> bool:
+    return config.maybe(key) not in (None, "0", "false", "no")
 
 
 class Listener:
@@ -31,11 +51,10 @@ class Listener:
         if m["is_from_me"]:
             # WTDD_ALLOW_SELF=1 lets Johnny trigger from his own phone (same account as the dog). The dog's own posts are
             # still refused: by confirmed guid, and by the shape of its replies, so it can never wake itself.
-            if config.maybe("WTDD_ALLOW_SELF") in (None, "0", "false", "no"):
+            if not _flag("WTDD_ALLOW_SELF"):
                 return False
             text = (m.get("text") or "").lower()
-            own = m["guid"] in memory.posted_guids() or text.startswith(("the dog is doin", "dog doin", "dog done", "on it:", "couldn't", "ok, done listening", "lights played", "living room lights", "this is fine", "did:", "listening for"))
-            return not own
+            return not (m["guid"] in memory.posted_guids() or text.startswith(OWN_OPENERS))
         if not HOUSEMATES:
             if not self._warned:
                 log("chat", "WARN HOUSEMATES is empty: any member of the group may wake the dog")
@@ -84,7 +103,7 @@ class Listener:
             self.armed_by = m["sender"]
             log("chat", "WAKE", by=hname(m["sender"]), phrase=wake[0], score=wake[1])
             self._event("chat.wake", m, phrase=wake[0], score=wake[1])
-            if config.maybe("WTDD_WAKE_SHOW") not in (None, "0", "false", "no"):
+            if _flag("WTDD_WAKE_SHOW"):
                 self.wake_show(m)
             else:
                 self.say(f"wake:{m['guid']}", f"the dog is doin. listening for {int(self.listen_s)}s: {' · '.join(command_list())}")
@@ -94,7 +113,7 @@ class Listener:
             if wake:
                 self.armed_until = time.time() + self.listen_s
                 return
-            if config.maybe("WTDD_AGENT") in (None, "0", "false", "no"):
+            if not _flag("WTDD_AGENT"):
                 log("chat", "armed, no command in message", by=hname(m["sender"]), chars=len(text))
                 return
             # the model takes charge: a free-form ask while armed becomes tool calls over the registry
@@ -136,7 +155,6 @@ class Listener:
             return 0
         memory.store(self.guid, msgs)
         self.last = msgs[-1]["rowid"]
-        memory.set_kv("last_rowid", str(self.last))
         for m in msgs:
             self.handle(m)
         return len(msgs)

@@ -1,5 +1,17 @@
-"""python -m wtdd.dog <command>. One asyncio loop per invocation; each command opens one connection,
-acts, writes ledger rows, and closes. `commands`, `check` and `probe` never touch the dog."""
+"""python -m wtdd.dog <command>. One asyncio loop per invocation; each live command opens one connection,
+acts, writes ledger rows, and closes. `commands`, `check` and `probe` never touch the dog.
+
+  commands            every SPORT_CMD name and id from the installed driver, allow/deny
+  check [route]       static: allowlist vs SPORT_CMD, every SPORT_CMD[...] literal in this package, every route file (no dog)
+  probe [--no-scan]   env, driver, discovery scan, key, signaling port; prints what is blocked
+  state [--seconds]   one LF_SPORT_MOD_STATE message and the measured publish rate
+  cmd <Name>          one SPORT_CMD by name (motion mode normal first)
+  move --x --y --z --seconds     velocity at 10 Hz, then StopMove
+  avoid on|off        obstacle avoidance with read-back
+  route <file|name>   a JSON route (path, or a name under wtdd/dog/routes/) with avoidance on
+  frame [--out]       the newest camera frame as JPEG (default ~/Pictures/wtdd/frame.jpg)
+Without a dog on the network only commands, check, probe and --help can be verified.
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,11 +24,8 @@ from pathlib import Path
 
 from unitree_webrtc_connect import SPORT_CMD
 
-from ..ledger import log, step
+from ..ledger import step
 from . import body as B
-
-HERE = Path(__file__).parent
-ROUTES = HERE / "routes"
 
 
 def cmd_commands(a: argparse.Namespace) -> int:
@@ -27,16 +36,18 @@ def cmd_commands(a: argparse.Namespace) -> int:
 
 
 def cmd_check(a: argparse.Namespace) -> int:
-    """Static: allowlist vs SPORT_CMD, every SPORT_CMD[...] literal in this package, every route file."""
+    """Static: allowlist vs SPORT_CMD (asserted when body imports), every SPORT_CMD[...] literal in this
+    package against the installed driver, every route file."""
     bad = 0
     print(f"allowlist: {len(B.ALLOW)} names, all in SPORT_CMD (asserted at import)")
-    refs = set()
-    for src in (HERE / "body.py", HERE / "__main__.py"):
+    here = Path(__file__).parent
+    refs: set[str] = set()
+    for src in (here / "body.py", here / "__main__.py"):
         refs |= set(re.findall(r'SPORT_CMD\["(\w+)"\]', src.read_text()))
     missing = sorted(refs - SPORT_CMD.keys())
     print(f"SPORT_CMD literals in code: {sorted(refs)} missing={missing}")
     bad += len(missing)
-    files = [Path(a.route)] if a.route else sorted(ROUTES.glob("*.json"))
+    files = [Path(a.route)] if a.route else sorted(B.ROUTES.glob("*.json"))
     for f in files:
         try:
             plan = B.validate_route(json.loads(f.read_text()))
@@ -56,24 +67,15 @@ def cmd_probe(a: argparse.Namespace) -> int:
     print()
     for c, s, d in rows:
         print(f"  {c:<{w}}  {s:<4}  {d}")
-    blocked = [f"{c}: {d}" for c, s, d in rows if s == "fail"]
     print(f"\n  dog reachable: {'yes' if reachable else 'NO'}")
-    for b in blocked:
-        print(f"  blocked by {b}")
+    for c, s, d in rows:
+        if s == "fail":
+            print(f"  blocked by {c}: {d}")
     return 0 if reachable else 1
 
 
-async def with_body(fn):
-    body = B.Body()
-    await body.connect()
-    try:
-        return await fn(body)
-    finally:
-        await body.close()
-
-
 async def cmd_state(a: argparse.Namespace) -> int:
-    async def go(body: B.Body) -> int:
+    async with B.Body() as body:
         await asyncio.sleep(a.seconds)
         with step("dog", "dog.state", "unitree", {"seconds": a.seconds}) as r:
             s = body.state()
@@ -83,58 +85,50 @@ async def cmd_state(a: argparse.Namespace) -> int:
             r["state_after"] = s
         print(json.dumps(body.raw(), indent=1))
         print(f"[wtdd:dog] state samples={s['n']} hz={s['hz']} mode={s['mode']} position={s['position']}")
-        return 0
-    return await with_body(go)
+    return 0
 
 
 async def cmd_cmd(a: argparse.Namespace) -> int:
     parameter = json.loads(a.parameter) if a.parameter else None
-
-    async def go(body: B.Body) -> int:
+    async with B.Body() as body:
         code = await body.cmd(a.name, parameter)
         print(f"[wtdd:dog] {a.name} code={code} state_after={json.dumps(body.state())}")
-        return 0
-    return await with_body(go)
+    return 0
 
 
 async def cmd_move(a: argparse.Namespace) -> int:
-    async def go(body: B.Body) -> int:
+    async with B.Body() as body:
         res = await body.move(a.x, a.y, a.z, a.seconds)
         print(f"[wtdd:dog] move {res} state_after={json.dumps(body.state())}")
-        return 0
-    return await with_body(go)
+    return 0
 
 
 async def cmd_avoid(a: argparse.Namespace) -> int:
-    async def go(body: B.Body) -> int:
+    async with B.Body() as body:
         enabled = await body.avoid(a.state == "on")
         print(f"[wtdd:dog] avoid enable={enabled}")
-        return 0
-    return await with_body(go)
+    return 0
 
 
 async def cmd_route(a: argparse.Namespace) -> int:
     path = Path(a.file)
-    if not path.exists() and (ROUTES / f"{a.file}.json").exists():
-        path = ROUTES / f"{a.file}.json"
+    if not path.exists() and (B.ROUTES / f"{a.file}.json").exists():
+        path = B.ROUTES / f"{a.file}.json"
     steps = json.loads(path.read_text())
-    plan = B.validate_route(steps)  # fails before any connection
-
-    async def go(body: B.Body) -> int:
+    B.validate_route(steps)  # a bad route fails here, before any connection
+    async with B.Body() as body:
         done = await body.route(steps, name=path.stem)
         for d in done:
             print(f"[wtdd:dog] {d['step']:>2}. {d['desc']}: {json.dumps(d['result'])[:120]}")
-        print(f"[wtdd:dog] route {path.stem} done {len(done)}/{len(plan)}")
-        return 0
-    return await with_body(go)
+        print(f"[wtdd:dog] route {path.stem} done {len(done)}/{len(steps)}")
+    return 0
 
 
 async def cmd_frame(a: argparse.Namespace) -> int:
-    async def go(body: B.Body) -> int:
+    async with B.Body() as body:
         data = await body.frame(a.out)
         print(f"[wtdd:dog] wrote {a.out} bytes={len(data)}")
-        return 0
-    return await with_body(go)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

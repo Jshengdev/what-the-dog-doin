@@ -1,9 +1,15 @@
-"""The CLI over the tool registry. One command per file in wtdd/tools, args as key=value.
+"""The CLI over the tool registry (wtdd/tools): one subcommand per tool file, args as key=value.
 
-  python -m wtdd list
+  python -m wtdd list                      every tool, its first doc line, its args with defaults
   python -m wtdd lights_dim percent=30
   python -m wtdd zone_set zone=b on=false
+  python -m wtdd walk_path dry=true
   python -m wtdd ask "make the living room warm and dim, then tell me what you did"   (the model picks the tools)
+Values parse as true/false, int, float, else str. Stdout is the tool's JSON result; exit 0 on success, 1 when the tool
+raised (error class and message on stderr; the ledger row already has it), 2 on an argument that is not key=value.
+The remote (ui/index.html) prints the equivalent `python -m wtdd <name> k=v` line under every button.
+Run everything inside .venv (`source .venv/bin/activate`): the device SDKs and the mcp package live there, and
+`python -m wtdd.dog probe` fails its venv check from any other interpreter.
 """
 from __future__ import annotations
 import json
@@ -35,9 +41,8 @@ def main(argv: list[str] | None = None) -> int:
         print(out["text"])
         print(f"[{len(out['calls'])} tool call(s), {out['usage'].get('total_tokens', '?')} tokens]", file=sys.stderr)
         return 0
-    name, kv = argv[0], argv[1:]
-    args = {}
-    for item in kv:
+    name, args = argv[0], {}
+    for item in argv[1:]:
         if "=" not in item:
             print(f"args are key=value (got {item!r})", file=sys.stderr)
             return 2

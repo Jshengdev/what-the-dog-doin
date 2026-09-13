@@ -1,4 +1,8 @@
-"""Env loading. Reads .env at the repo root once; missing required keys throw (CLAUDE.md §2: fail loud)."""
+"""Env loading. Reads <repo>/.env once into os.environ (setdefault: a real environment variable wins over the file).
+get(key) returns the value or raises RuntimeError when it is missing or empty (fail loud, CLAUDE.md section 2);
+maybe(key) returns None instead. Line format: KEY=value, surrounding quotes stripped, `#` starts a comment only after
+a space (keys and values may contain #). ROOT is the repo root; ledger.jsonl, memory.db and ui/ hang off it.
+"""
 from __future__ import annotations
 import os
 from pathlib import Path
@@ -18,8 +22,7 @@ def _load() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            v = v.split(" #", 1)[0].strip().strip('"').strip("'")   # a comment needs a space before #; keys can contain #
-            os.environ.setdefault(k.strip(), v)
+            os.environ.setdefault(k.strip(), v.split(" #", 1)[0].strip().strip('"').strip("'"))
     _loaded = True
 
 
@@ -33,5 +36,4 @@ def get(key: str, default: str | None = None) -> str:
 
 def maybe(key: str) -> str | None:
     _load()
-    v = os.environ.get(key)
-    return v if v else None
+    return os.environ.get(key) or None

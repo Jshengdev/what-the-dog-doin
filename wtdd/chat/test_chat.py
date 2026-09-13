@@ -1,5 +1,6 @@
 """Local checks that never touch osascript or send anything. Run: python -m unittest wtdd.chat.test_chat -v
-Uses a scratch memory.db and ledger via WTDD_MEMORY / WTDD_LEDGER, and a fake WTDD_CHAT_GUID."""
+Uses a scratch memory.db and ledger via WTDD_MEMORY / WTDD_LEDGER (set before the ledger is imported, so the real file
+is never touched) and a fake WTDD_CHAT_GUID. The Db case reads the real chat.db (read-only)."""
 from __future__ import annotations
 import os
 import tempfile
@@ -52,6 +53,9 @@ class Escape(unittest.TestCase):
 
 
 class Gate(unittest.TestCase):
+    """Every post goes through cli.post, which gates before it claims or sends; send_text/send_file gate again
+    on their own, so the transport refuses a direct caller too. _osascript is stubbed to fail loudly."""
+
     def setUp(self):
         self._real = send._osascript
         send._osascript = _no_osascript
@@ -61,12 +65,12 @@ class Gate(unittest.TestCase):
 
     def test_castle_is_not_the_configured_guid(self):
         with self.assertRaises(PermissionError):
-            send.send_text(CASTLE, "x")
+            cli.post(CASTLE, "t-gate-1", "send", text="x")
 
     def test_configured_guid_must_carry_the_target_name(self):
         # FAKE is WTDD_CHAT_GUID but no chat in chat.db carries that guid, so the name check refuses it too.
         with self.assertRaises(PermissionError) as cm:
-            send.send_text(FAKE, "x")
+            cli.post(FAKE, "t-gate-2", "send", text="x")
         self.assertIn(send.TARGET_NAME, str(cm.exception))
 
     def test_guid_and_name_must_both_match_the_one_target(self):
@@ -77,7 +81,7 @@ class Gate(unittest.TestCase):
         send.TARGET_NAME = "wtdd test"
         try:
             with self.assertRaises(PermissionError) as cm:
-                send.send_file(CASTLE, __file__)
+                cli.post(CASTLE, "t-gate-3", "photo", file=__file__)
             self.assertIn("THE CASTLE", str(cm.exception))
             # And with the target name set to the castle (Johnny's explicit choice on 2026-09-13), the gate passes.
             send.TARGET_NAME = "THE CASTLE"
@@ -85,6 +89,18 @@ class Gate(unittest.TestCase):
         finally:
             send.TARGET_NAME = real_name
             os.environ["WTDD_CHAT_GUID"] = FAKE
+
+    def test_transport_refuses_castle_text(self):
+        with self.assertRaises(PermissionError):
+            send.send_text(CASTLE, "x")
+
+    def test_transport_refuses_unnamed_configured_guid(self):
+        with self.assertRaises(PermissionError):
+            send.send_text(FAKE, "x")
+
+    def test_transport_refuses_castle_file(self):
+        with self.assertRaises(PermissionError):
+            send.send_file(CASTLE, __file__)
 
     def test_post_refuses_before_claiming_and_leaves_a_receipt(self):
         with self.assertRaises(PermissionError):
@@ -142,11 +158,11 @@ class Compose(unittest.TestCase):
 
 MSGS = [
     {"rowid": 1, "guid": "g1", "text": "dog, do a round", "is_from_me": 0, "sender": "+15550001111",
-     "ts_utc": "2026-09-13 07:00:00", "attachments": [], "has_attachments": 0},
+     "ts_utc": "2026-09-13 07:00:00", "attachments": []},
     {"rowid": 2, "guid": "g2", "text": None, "is_from_me": 0, "sender": "+15550001111",
-     "ts_utc": "2026-09-13 07:00:05", "attachments": ["/tmp/a.png"], "has_attachments": 1},
+     "ts_utc": "2026-09-13 07:00:05", "attachments": ["/tmp/a.png"]},
     {"rowid": 3, "guid": "g3", "text": "on it", "is_from_me": 1, "sender": "",
-     "ts_utc": "2026-09-13 07:00:09", "attachments": [], "has_attachments": 0},
+     "ts_utc": "2026-09-13 07:00:09", "attachments": []},
 ]
 
 

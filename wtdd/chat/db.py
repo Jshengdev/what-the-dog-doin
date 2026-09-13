@@ -1,4 +1,17 @@
-"""The ears: a read-only view of ~/Library/Messages/chat.db. SQL and epoch conversion verbatim from docs/CHAT.md."""
+"""The ears: a read-only view of ~/Library/Messages/chat.db (sqlite opened with mode=ro; this module never writes).
+
+Run: python -m wtdd.chat chats           named chats with guid, member count, last message time (UTC)
+     python -m wtdd.chat watch --once    one poll of WTDD_CHAT_GUID above MAX(ROWID)
+
+Verified on this Mac (2026-09-13). chat.db is readable once the terminal has Full Disk Access. Group chat guids have the
+form `any;+;<32 hex>` and are exactly the ids AppleScript's `get id of every chat` returns, so the same guid drives both
+the read (here) and the send (send.py). message.date is nanoseconds since 2001-01-01, hence
+`date / 1000000000 + 978307200` for a unix epoch. Tapbacks are rows with associated_message_type != 0 and are dropped.
+`text` can be NULL with the content in `attributedBody` (a typedstream blob; attributed_text decodes it); when that
+fails too the message stays None and the caller logs it as [non-text]. On macOS 26 the dog's own outgoing text also
+lands in attributedBody with text NULL, so the from-me read-back matches either column; from-me file rows have text
+NULL and cache_has_attachments = 1. find_from_me polls every 0.5 s for timeout_s (send.py passes 10 s) and returns
+None on timeout: the caller fails the step, nothing here retries."""
 from __future__ import annotations
 import os
 import sqlite3
@@ -12,10 +25,8 @@ from ..ledger import log
 
 CHAT_DB = Path("~/Library/Messages/chat.db").expanduser()
 
-# docs/CHAT.md "Reading the group", verbatim.
 NEW_MESSAGES_SQL = """
-SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me,
-       m.associated_message_type, m.cache_has_attachments,
+SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.is_from_me, m.associated_message_type,
        COALESCE(h.id, '') AS sender,
        datetime(m.date / 1000000000 + 978307200, 'unixepoch') AS ts_utc,
        (SELECT group_concat(a.filename, '|')
@@ -40,15 +51,15 @@ WHERE c.display_name IS NOT NULL AND c.display_name != ''
 ORDER BY last_ts DESC
 """
 
-# The dog's own echo. text = ? for a text send; cache_has_attachments = 1 for a file send (from-me file rows have text NULL).
-FROM_ME_SQL = """
+# The dog's own echo above a watermark: the first from-me row that is a file (text NULL, attachment flag) or carries the text.
+_FROM_ME = """
 SELECT m.ROWID, m.guid, datetime(m.date / 1000000000 + 978307200, 'unixepoch') AS ts_utc
 FROM message m
 JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
 JOIN chat c ON c.ROWID = cmj.chat_id
-WHERE c.guid = ? AND m.ROWID > ? AND m.is_from_me = 1 AND {cond}
-ORDER BY m.ROWID ASC LIMIT 1
-"""
+WHERE c.guid = ? AND m.ROWID > ? AND m.is_from_me = 1 AND """
+FROM_ME_FILE_SQL = _FROM_ME + "m.cache_has_attachments = 1 ORDER BY m.ROWID ASC LIMIT 1"
+FROM_ME_TEXT_SQL = _FROM_ME + "(m.text = ? OR instr(cast(m.attributedBody as text), ?) > 0) ORDER BY m.ROWID ASC LIMIT 1"
 
 
 @contextmanager
@@ -101,7 +112,8 @@ def attributed_text(blob: bytes | None) -> str | None:
 
 
 def new_messages(guid: str, after_rowid: int) -> list[dict[str, Any]]:
-    """Rows above the watermark, oldest first. Tapbacks dropped. NULL text stays None (logged as [non-text] by the caller)."""
+    """Rows above the watermark, oldest first, as {rowid, guid, text, is_from_me, sender, ts_utc, attachments}.
+    Tapbacks dropped. NULL text stays None (logged as [non-text] by the caller)."""
     t0 = time.perf_counter()
     out: list[dict[str, Any]] = []
     tapbacks = 0
@@ -110,12 +122,11 @@ def new_messages(guid: str, after_rowid: int) -> list[dict[str, Any]]:
             if r["associated_message_type"] != 0:
                 tapbacks += 1
                 continue
-            files = [os.path.expanduser(p) for p in (r["attachments"] or "").split("|") if p]
             out.append({
                 "rowid": r["ROWID"], "guid": r["guid"],
                 "text": r["text"] if r["text"] is not None else attributed_text(r["attributedBody"]),
                 "is_from_me": int(r["is_from_me"]), "sender": r["sender"], "ts_utc": r["ts_utc"],
-                "attachments": files, "has_attachments": int(r["cache_has_attachments"] or 0),
+                "attachments": [os.path.expanduser(p) for p in (r["attachments"] or "").split("|") if p],
             })
     if out or tapbacks:
         log("chat", f"new_messages n={len(out)}", tapbacks=tapbacks,
@@ -129,10 +140,9 @@ def find_from_me(guid: str, after_rowid: int, text: str | None, timeout_s: float
     Returns {guid, rowid, ts} or None. The caller treats None as a failed step; nothing here retries the send."""
     t0 = time.perf_counter()
     if text is None:
-        sql, params = FROM_ME_SQL.format(cond="m.cache_has_attachments = 1"), (guid, after_rowid)
+        sql, params = FROM_ME_FILE_SQL, (guid, after_rowid)
     else:
-        # wtdd: on macOS 26 outgoing text lands in attributedBody with text NULL, so match either column
-        sql, params = FROM_ME_SQL.format(cond="(m.text = ? OR instr(cast(m.attributedBody as text), ?) > 0)"), (guid, after_rowid, text, text)
+        sql, params = FROM_ME_TEXT_SQL, (guid, after_rowid, text, text)
     deadline = t0 + timeout_s
     while True:
         with connect() as c:

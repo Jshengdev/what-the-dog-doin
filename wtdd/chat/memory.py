@@ -1,6 +1,20 @@
-"""memory.db next to ledger.jsonl: chat_messages (what was said), posts (the never-twice gate), kv (last_rowid).
-Tables verbatim from docs/CHAT.md, plus one column: chat_messages.chat_guid, so a read-only watch on another chat
-never leaks into the test group's context. The messages are the source of truth; context is computed each turn."""
+"""memory.db (WTDD_MEMORY, default <repo>/memory.db): what the chat said, and the never-twice gate on what the dog posts.
+
+Run: python -m wtdd.chat context [--n 20]   prints the four-part context the model gets each turn.
+
+Tables. chat_messages: one row per chat.db message seen by watch/listen, idempotent on guid (INSERT OR IGNORE), tagged
+with chat_guid so a read-only watch on another chat never leaks into the target group's context. posts: the never-twice
+gate keyed on the trigger (the guid of the message that caused the post, or a CLI key). claim() INSERTs the trigger
+BEFORE osascript runs; a primary-key conflict means posted or in flight, so the send does not happen. confirm() lands
+the read-back guid on the claim row once the send is confirmed. posted_guids() is how the listener knows its own posts.
+
+context(): the messages are the source of truth and the context is recomputed every turn from four parts: the last n
+chat lines (UTC times; senders by first name when HOUSEMATES knows them, else the handle), the last 10 ledger rows
+except llm.generate (what the dog did), the last posts row (what was reported), and <repo>/state.json if present.
+
+Dropped on purpose (2026-09-13 fold): the kv table with its write-only last_rowid watermark (nothing ever read it;
+watch and listen start at MAX(ROWID) or --since) and the report= half of "what was reported" (no step ever wrote
+"report", so it was always None). An older memory.db that still has a kv table is fine: nothing touches it."""
 from __future__ import annotations
 import json
 import os
@@ -13,7 +27,8 @@ from typing import Any
 
 from ..config import ROOT
 from ..ledger import log, rows as ledger_rows
-from .housemates import is_trigger, name
+from .housemates import name
+from .triggers import is_wake
 
 MEMORY = Path(os.environ.get("WTDD_MEMORY", ROOT / "memory.db"))
 
@@ -24,7 +39,6 @@ CREATE TABLE IF NOT EXISTS chat_messages(
   ts_utc TEXT NOT NULL, seen_at TEXT NOT NULL,
   chat_guid TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_messages(ts_utc DESC);
-CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS posts(
   trigger_guid TEXT PRIMARY KEY,
   claimed_at   TEXT NOT NULL,
@@ -64,19 +78,8 @@ def store(chat_guid: str, msgs: list[dict[str, Any]]) -> int:
     return n
 
 
-def get_kv(k: str) -> str | None:
-    with connect() as c:
-        r = c.execute("SELECT v FROM kv WHERE k = ?", (k,)).fetchone()
-    return r["v"] if r else None
-
-
-def set_kv(k: str, v: str) -> None:
-    with connect() as c:
-        c.execute("INSERT INTO kv(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", (k, v))
-
-
 def claim(trigger_guid: str) -> bool:
-    """docs/CHAT.md step 1: insert BEFORE osascript. A primary-key conflict means posted or in flight: False, no send."""
+    """Step 1 of a post: insert BEFORE osascript. A primary-key conflict means posted or in flight: False, no send."""
     try:
         with connect() as c:
             c.execute("INSERT INTO posts(trigger_guid, claimed_at) VALUES (?, ?)", (trigger_guid, _now()))
@@ -87,7 +90,7 @@ def claim(trigger_guid: str) -> bool:
 
 
 def confirm(trigger_guid: str, posted_guid: str) -> None:
-    """docs/CHAT.md step 2: the read-back guid lands on the claim row."""
+    """Step 2 of a post: the read-back guid lands on the claim row."""
     with connect() as c:
         n = c.execute("UPDATE posts SET posted_guid = ?, confirmed_at = ? WHERE trigger_guid = ?",
                       (posted_guid, _now(), trigger_guid)).rowcount
@@ -96,19 +99,19 @@ def confirm(trigger_guid: str, posted_guid: str) -> None:
 
 
 def last_trigger(chat_guid: str, known: dict[str, str]) -> dict[str, Any] | None:
-    """Newest stored message in this chat from a known housemate whose text contains a trigger phrase."""
+    """Newest stored message in this chat from a known housemate whose text contains a wake phrase."""
     with connect() as c:
         rows = c.execute(
             "SELECT * FROM chat_messages WHERE chat_guid = ? AND is_from_me = 0 AND text IS NOT NULL"
             " ORDER BY rowid DESC LIMIT 50", (chat_guid,)).fetchall()
     for r in rows:
-        if r["sender"] in known and is_trigger(r["text"]):
+        if r["sender"] in known and is_wake(r["text"]) is not None:
             return dict(r)
     return None
 
 
 def context(chat_guid: str, n: int = 20) -> str:
-    """docs/CHAT.md "Memory": the four-part context the central agent composes every turn."""
+    """The four-part context the central agent composes every turn (see the module docstring)."""
     with connect() as c:
         msgs = c.execute("SELECT * FROM chat_messages WHERE chat_guid = ? ORDER BY rowid DESC LIMIT ?",
                          (chat_guid, n)).fetchall()[::-1]
@@ -120,11 +123,9 @@ def context(chat_guid: str, n: int = 20) -> str:
         photos = "".join(" [photo]" for _ in json.loads(m["attachments_json"]))
         lines.append(f"[{m['ts_utc'][11:16]}] {who}: {body}{photos}")
 
-    all_rows = ledger_rows()
-    did = [r for r in all_rows if r.get("tool") != "llm.generate"][-10:]
+    did = [r for r in ledger_rows() if r.get("tool") != "llm.generate"][-10:]
     did_lines = [f"{r.get('step')} {r.get('tool')} args={json.dumps(r.get('args'), default=str)}"
                  f" after={json.dumps(r.get('state_after'), default=str)} ok={r.get('ok')}" for r in did]
-    report = next((r for r in reversed(all_rows) if r.get("step") == "report"), None)
 
     state_path = ROOT / "state.json"
     state = json.dumps(json.loads(state_path.read_text())) if state_path.exists() else "(no state.json)"
@@ -132,8 +133,7 @@ def context(chat_guid: str, n: int = 20) -> str:
     return "\n\n".join([
         f"## chat (last {len(lines)}, times UTC)\n" + ("\n".join(lines) or "(none)"),
         f"## what the dog did (last {len(did_lines)} ledger rows)\n" + ("\n".join(did_lines) or "(none)"),
-        "## what was reported\n"
-        f"report={json.dumps(report, default=str)}\npost={json.dumps(dict(post), default=str) if post else None}",
+        "## what was reported\n" + f"post={json.dumps(dict(post), default=str) if post else None}",
         "## state\n" + state,
     ])
 

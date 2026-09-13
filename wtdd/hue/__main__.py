@@ -1,30 +1,70 @@
-"""python -m wtdd.hue <probe|pair|lights|read|set|signal|zone>. See GOAL.md. Every command writes ledger rows."""
+"""Philips Hue lights agent: python -m wtdd.hue <cmd>. Every command writes ledger rows (agent 'lights', app 'hue';
+tools lights.set, lights.set_zone, lights.list, lights.rooms, lights.connectivity, lights.read, lights.signal,
+lights.identify, lights.pair, lights.config, lights.discover, lights.tcp, lights.oauth_token); every PUT is followed by
+a GET read-back that must match or the row fails and the call raises. Env: HUE_BRIDGE_IP, HUE_APP_KEY,
+HUE_REMOTE_TOKEN, HUE_REMOTE_REFRESH, HUE_CLIENT_ID, HUE_CLIENT_SECRET, HUE_APP_ID (all read through wtdd.config).
+
+Commands:
+  probe                                   discovery, tcp, config, key, light count; never throws before the table
+  pair [--force]                          local link-button flow; writes HUE_APP_KEY into .env; never prints the key
+  lights                                  table: id, name, room, on, bri, color, reachable (zigbee_connectivity)
+  read <light>                            one light's summary; <light> = full id, unique id prefix, or name
+  set <light> --on|--off [--bri 0-100] [--xy x,y]
+  signal <light> --seconds N              native alternating red/blue on a colour light
+  zone <name> --on|--off [--bri N]        every light of a zone from zones.json (a, b, c, living room)
+  remote-auth [--port 8787] [--timeout 180] [--no-open]   cloud path: OAuth -> tokens -> cloud link button -> app key
+  remote-refresh                          new HUE_REMOTE_TOKEN from HUE_REMOTE_REFRESH
+  burst <light> [--n 15]                  rate-limit probe: n quick sets with the throttle off, stop at the first 429
+
+Done when (all seen on the real bridge 2026-09-13): probe reports the bridge reachable and the key valid; lights
+prints every light with live state; set then read shows the change in state_after; signal runs on a colour bulb; each
+of those is one ledger row with latency. Measured numbers (0.8 s per set, 15 of 15 burst sets ok) are in api.py.
+
+Facts (2026-09-13). Bridge 001788FFFE616851 "Hue Bridge Car" at 10.66.1.109 (meethue discovery); this Mac is on
+10.66.10.0/24 and cannot reach it on the LAN, so everything runs through the cloud route (HUE_REMOTE_TOKEN set).
+7 lights on the bridge; the four in the living room are Hue Iris 2, Go table lamp 1, special, sticky canbo.
+Cloud path setup: register a "Remote Hue API" app at https://developers.meethue.com/my-apps/ with callback
+http://localhost:8787/callback, put HUE_CLIENT_ID, HUE_CLIENT_SECRET, HUE_APP_ID in .env, run `remote-auth` (opens
+the browser, catches the code on :8787, exchanges tokens, presses the cloud link button, creates the app key; writes
+HUE_REMOTE_TOKEN, HUE_REMOTE_REFRESH, HUE_APP_KEY to .env). Local path: Johnny puts this Mac on the bridge's subnet
+(or moves the bridge's Ethernet to this router), runs `pair`, and presses the physical link button when it says so.
+
+zones.json: zone name -> {"lights": [full light ids], "names": [the same lights, for humans]}. a, b, c are the three
+corridor thirds (1.5 m each; their polygons and the strip flag live in ui/map.json); "living room" is all four.
+set_zone reads only `lights`, refuses an empty zone or an id the bridge does not have, and never touches an id absent
+from the file.
+
+Never: no fallbacks, no cached light state pretending to be live, no writes to lights not named in the command, no git
+commit from here.
+Tests: python -m wtdd.hue.test_stub (an in-process HTTPS fake bridge covering request shaping, the read-back rule,
+bad key, rate limit, the pair poll, zones, and the signal refusal; nothing there touches the real bridge).
+"""
 from __future__ import annotations
 import argparse
-import requests
+import http.server
 import json
 import re
 import shutil
+import socketserver
+import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any
+
+import requests
 
 from .. import config, ledger
 from .api import OAUTH, AGENT, APP, HueBridge, HueError, discover, raw, summary, tcp_open
 
-HERE = Path(__file__).resolve().parent
-ZONES = HERE / "zones.json"
+ZONES = Path(__file__).resolve().with_name("zones.json")
 ENV = config.ROOT / ".env"
-
-
-def bridge() -> HueBridge:
-    return HueBridge.from_env(key_required=False)
 
 
 # ---------------------------------------------------------------- probe
 def probe(ip: str | None, key: str | None) -> bool:
-    """Never raises. Prints one status table; returns True only when every line is ok."""
+    """Never raises. Prints one status table; returns True only when every line is ok or warn."""
     rows: list[tuple[str, str, str]] = []
 
     def run(label: str, fn, skip: str | None = None) -> Any:
@@ -53,35 +93,32 @@ def probe(ip: str | None, key: str | None) -> bool:
         ls = b.lights()
         return ls, f"n={len(ls)}: " + ", ".join(f"{l['id'][:8]} {l['metadata']['name']}" for l in ls)
 
+    key_row = ("HUE_APP_KEY", "ok" if key else "FAIL", f"present ({len(key)} chars)" if key else "empty: run `python -m wtdd.hue pair`")
     token = config.maybe("HUE_REMOTE_TOKEN")
     if token:
         b = HueBridge(ip or "api.meethue.com", key, remote_token=token)
         rows.append(("mode", "ok", "REMOTE via api.meethue.com/route (HUE_REMOTE_TOKEN set)"))
         run("GET /route/api/0/config", _cfg)
-        rows.append(("HUE_APP_KEY", "ok" if key else "FAIL", f"present ({len(key)} chars)" if key else "empty: run `python -m wtdd.hue pair`"))
+        rows.append(key_row)
         run("GET /route/clip/v2/resource/light", _lights, skip=None if key else "no key")
-        ok = all(st in ("ok", "warn") for _, st, _ in rows)
-        w = max(len(l) for l, _, _ in rows)
-        print(f"{'probe':<{w}}  status  detail")
-        for label, st, note in rows:
-            print(f"{label:<{w}}  {st:<6}  {note}")
-        if not ok:
-            print("\nBLOCKED. Johnny: if the token expired run `python -m wtdd.hue remote-refresh`; if there is no key run `python -m wtdd.hue pair`.")
-        return ok
-    # discovery is informational once HUE_BRIDGE_IP is set (Philips rate-limits it: HTTP 429 after repeated probes)
-    run("discovery.meethue.com", _disc)
-    if ip and rows and rows[-1][1] == "FAIL":
-        rows[-1] = (rows[-1][0], "warn", rows[-1][2] + " (informational; HUE_BRIDGE_IP is set)")
-    tcp = False
-    if not ip:
-        rows.append(("HUE_BRIDGE_IP", "FAIL", f"missing: cp .env.example .env (see {ENV})"))
+        fix = "if the token expired run `python -m wtdd.hue remote-refresh`; if there is no key run `python -m wtdd.hue pair`."
     else:
-        b = HueBridge(ip, key)
-        tcp = run(f"tcp {ip if ':' in ip else ip + ':443'}", lambda: (tcp_open(ip), "open")) is not None
-        run("GET /api/0/config", _cfg, skip=None if tcp else "tcp closed")
-    rows.append(("HUE_APP_KEY", "ok" if key else "FAIL", f"present ({len(key)} chars)" if key else "empty: run `python -m wtdd.hue pair`"))
-    if ip:
-        run("GET /clip/v2/resource/light", _lights, skip=None if (tcp and key) else ("tcp closed" if not tcp else "no key"))
+        # discovery is informational once HUE_BRIDGE_IP is set (Philips rate-limits it: HTTP 429 after repeated probes)
+        run("discovery.meethue.com", _disc)
+        if ip and rows[-1][1] == "FAIL":
+            rows[-1] = (rows[-1][0], "warn", rows[-1][2] + " (informational; HUE_BRIDGE_IP is set)")
+        tcp = False
+        if not ip:
+            rows.append(("HUE_BRIDGE_IP", "FAIL", f"missing: cp .env.example .env (see {ENV})"))
+        else:
+            b = HueBridge(ip, key)
+            tcp = run(f"tcp {ip if ':' in ip else ip + ':443'}", lambda: (tcp_open(ip), "open")) is not None
+            run("GET /api/0/config", _cfg, skip=None if tcp else "tcp closed")
+        rows.append(key_row)
+        if ip:
+            run("GET /clip/v2/resource/light", _lights, skip=None if (tcp and key) else ("tcp closed" if not tcp else "no key"))
+        fix = ("1) put this Mac on the bridge's subnet (or move the bridge's Ethernet to this router), then re-run "
+               "`python -m wtdd.hue probe`; 2) when tcp is open, run `python -m wtdd.hue pair` and press the link button.")
 
     w = max(len(r[0]) for r in rows)
     print(f"{'probe':<{w}}  status  detail")
@@ -89,8 +126,7 @@ def probe(ip: str | None, key: str | None) -> bool:
         print(f"{label:<{w}}  {status:<6}  {note}")
     ok = all(r[1] in ("ok", "warn") for r in rows)
     if not ok:
-        print("\nBLOCKED. Johnny: 1) put this Mac on the bridge's subnet (or move the bridge's Ethernet to this router), "
-              "then re-run `python -m wtdd.hue probe`; 2) when tcp is open, run `python -m wtdd.hue pair` and press the link button.")
+        print(f"\nBLOCKED. Johnny: {fix}")
     return ok
 
 
@@ -169,8 +205,8 @@ def load_zones(path: Path = ZONES) -> dict[str, Any]:
 
 
 def set_zone(b: HueBridge, name: str, on: bool, bri: float | None, path: Path = ZONES) -> dict[str, Any]:
-    """Sets every light in the zone (contract: never touches an id absent from zones.json). One row for the zone
-    on top of one lights.set row per light."""
+    """Sets every light in the zone (contract: never touches an id absent from zones.json). One lights.set_zone row on
+    top of one lights.set row per light. Returns {light id: summary}."""
     zones = load_zones(path)
     if name not in zones:
         raise HueError(f"zone '{name}' not in {path}; known: {', '.join(zones)}")
@@ -189,12 +225,9 @@ def set_zone(b: HueBridge, name: str, on: bool, bri: float | None, path: Path = 
         return r["state_after"]
 
 
-# ---------------------------------------------------------------- cli
+# ---------------------------------------------------------------- cloud auth
 def _catch_code(port: int, timeout_s: float) -> str | None:
     """Tiny one-shot HTTP listener for the OAuth redirect http://localhost:<port>/callback?code=...; None on timeout."""
-    import http.server
-    import socketserver
-    import urllib.parse
     got: dict[str, str] = {}
 
     class H(http.server.BaseHTTPRequestHandler):
@@ -213,14 +246,27 @@ def _catch_code(port: int, timeout_s: float) -> str | None:
     return got.get("code") or None
 
 
+def _token(grant: str, **fields: str) -> dict[str, Any]:
+    """One POST to the Hue OAuth token endpoint (basic auth with the client id and secret); one lights.oauth_token row."""
+    cid, secret = config.get("HUE_CLIENT_ID"), config.get("HUE_CLIENT_SECRET")
+    with ledger.step(AGENT, "lights.oauth_token", APP, {"grant": grant}) as r:
+        resp = requests.post(f"{OAUTH}/token", auth=(cid, secret), data={"grant_type": grant, **fields}, timeout=15)
+        if resp.status_code != 200:
+            raise HueError(f"{grant} HTTP {resp.status_code}: {resp.text[:200]}")
+        tok = resp.json()
+        r["state_after"] = {"expires_in": tok.get("expires_in"), "token_type": tok.get("token_type")}
+    write_env_key(ENV, "HUE_REMOTE_TOKEN", tok["access_token"])
+    refresh = tok.get("refresh_token", "")
+    if refresh or grant == "authorization_code":   # a fresh login always rewrites the refresh token, even to blank
+        write_env_key(ENV, "HUE_REMOTE_REFRESH", refresh)
+    return tok
+
+
 def remote_auth(a: argparse.Namespace) -> int:
-    """Cloud path: OAuth code -> tokens -> virtual link button -> app key. Needs HUE_CLIENT_ID, HUE_CLIENT_SECRET, HUE_APP_ID
-    from a "Remote Hue API" app registered at https://developers.meethue.com/my-apps/ with callback http://localhost:8787/callback."""
-    import subprocess
-    import urllib.parse
-    cid, secret, appid = config.get("HUE_CLIENT_ID"), config.get("HUE_CLIENT_SECRET"), config.get("HUE_APP_ID")
-    url = (f"{OAUTH}/authorize?" + urllib.parse.urlencode({"client_id": cid, "response_type": "code", "state": "wtdd",
-           "appid": appid, "deviceid": "wtdd-mac", "devicename": "wtdd"}))
+    """Cloud path: OAuth code -> tokens -> virtual link button -> app key (see the module docstring for the app setup)."""
+    url = f"{OAUTH}/authorize?" + urllib.parse.urlencode({"client_id": config.get("HUE_CLIENT_ID"), "response_type": "code",
+                                                          "state": "wtdd", "appid": config.get("HUE_APP_ID"),
+                                                          "deviceid": "wtdd-mac", "devicename": "wtdd"})
     print("1) Log in and grant in the browser" + (" (opening it now)" if not a.no_open else " (use the tab already open)") + ":\n   " + url, flush=True)
     if not a.no_open:
         subprocess.run(["open", url], check=False)
@@ -231,33 +277,16 @@ def remote_auth(a: argparse.Namespace) -> int:
             raise HueError(f"no redirect reached http://localhost:{a.port}/callback within {a.timeout:.0f}s "
                            "(the Hue login or the allow step was not completed); re-run when at the browser")
         code = input("   No redirect caught. Paste the `code` from the redirect URL: ").strip()
-    with ledger.step(AGENT, "lights.oauth_token", APP, {"grant": "authorization_code"}) as r:
-        resp = requests.post(f"{OAUTH}/token", auth=(cid, secret), data={"grant_type": "authorization_code", "code": code}, timeout=15)
-        if resp.status_code != 200:
-            raise HueError(f"token exchange HTTP {resp.status_code}: {resp.text[:200]}")
-        tok = resp.json()
-        r["state_after"] = {"expires_in": tok.get("expires_in"), "token_type": tok.get("token_type")}
-    write_env_key(ENV, "HUE_REMOTE_TOKEN", tok["access_token"])
-    write_env_key(ENV, "HUE_REMOTE_REFRESH", tok.get("refresh_token", ""))
+    tok = _token("authorization_code", code=code)
     print("3) Tokens written to .env. Creating the app key through the cloud link button ...")
-    b = HueBridge("api.meethue.com", None, remote_token=tok["access_token"])
-    username = b.pair("wtdd#remote")
+    username = HueBridge("api.meethue.com", None, remote_token=tok["access_token"]).pair("wtdd#remote")
     write_env_key(ENV, "HUE_APP_KEY", username)
     print("4) HUE_APP_KEY written. Now: python -m wtdd.hue probe && python -m wtdd.hue lights")
     return 0
 
 
 def remote_refresh(a: argparse.Namespace) -> int:
-    cid, secret, rt = config.get("HUE_CLIENT_ID"), config.get("HUE_CLIENT_SECRET"), config.get("HUE_REMOTE_REFRESH")
-    with ledger.step(AGENT, "lights.oauth_token", APP, {"grant": "refresh_token"}) as r:
-        resp = requests.post(f"{OAUTH}/token", auth=(cid, secret), data={"grant_type": "refresh_token", "refresh_token": rt}, timeout=15)
-        if resp.status_code != 200:
-            raise HueError(f"refresh HTTP {resp.status_code}: {resp.text[:200]}")
-        tok = resp.json()
-        r["state_after"] = {"expires_in": tok.get("expires_in")}
-    write_env_key(ENV, "HUE_REMOTE_TOKEN", tok["access_token"])
-    if tok.get("refresh_token"):
-        write_env_key(ENV, "HUE_REMOTE_REFRESH", tok["refresh_token"])
+    _token("refresh_token", refresh_token=config.get("HUE_REMOTE_REFRESH"))
     print("refreshed; HUE_REMOTE_TOKEN written")
     return 0
 
@@ -265,13 +294,9 @@ def remote_refresh(a: argparse.Namespace) -> int:
 def burst(a: argparse.Namespace) -> int:
     """Rate-limit probe: n back-to-back brightness PUTs (alternating +1/-1, imperceptible) on one light with the throttle
     off; prints status and latency per call and stops at the first 429; restores the original brightness."""
-    b = bridge()
-    light = resolve(b.lights(), a.light)
-    rid = light["id"]
-    start = summary(b.read(rid))
-    base = float(start.get("brightness") or 50)
-    b._last_put = {}
-    b.__dict__["_no_throttle"] = True
+    b = HueBridge.from_env(key_required=False)
+    rid = resolve(b.lights(), a.light)["id"]
+    base = float(summary(b.read(rid)).get("brightness") or 50)
     results = []
     orig_throttle = b._throttle
     b._throttle = lambda rtype: None
@@ -298,8 +323,9 @@ def burst(a: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- cli
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="python -m wtdd.hue", description="Philips Hue lights agent (CLIP v2, LAN)")
+    p = argparse.ArgumentParser(prog="python -m wtdd.hue", description="Philips Hue lights agent (CLIP v2, local or cloud route)")
     sub = p.add_subparsers(dest="cmd", required=True)
     ra = sub.add_parser("remote-auth", help="cloud path: OAuth login -> tokens -> cloud link button -> app key (writes .env)")
     ra.add_argument("--port", type=int, default=8787); ra.add_argument("--timeout", type=float, default=180.0)
@@ -333,11 +359,11 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     try:
-        if hasattr(a, "fn"):            # remote-auth, remote-refresh
+        if hasattr(a, "fn"):            # remote-auth, remote-refresh, burst
             return a.fn(a)
         if a.cmd == "probe":
             return 0 if probe(config.maybe("HUE_BRIDGE_IP"), config.maybe("HUE_APP_KEY")) else 1
-        b = bridge()
+        b = HueBridge.from_env(key_required=False)
         if a.cmd == "pair":
             if b.key and not a.force:
                 print("HUE_APP_KEY already set in .env; use --force to re-pair.")
@@ -362,13 +388,11 @@ def main(argv: list[str] | None = None) -> int:
         if a.cmd == "signal":
             print(json.dumps(b.signal(resolve(b.lights(), a.light)["id"], a.seconds)))
             return 0
-        if a.cmd == "zone":
-            print(json.dumps(set_zone(b, a.zone, a.on, a.bri)))
-            return 0
+        print(json.dumps(set_zone(b, a.zone, a.on, a.bri)))   # zone: the last subcommand argparse accepts
+        return 0
     except HueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    return 2
 
 
 if __name__ == "__main__":

@@ -1,90 +1,90 @@
-"""What a recognized command actually does. Every handler calls the real module and fails loud; the listener posts the
-truth either way (the result, or the error class and message). Nothing here fakes a success (CLAUDE.md §2)."""
+"""What a chat command actually does. HANDLERS maps each fixed phrase (the WTDD_COMMANDS list in .env, minus "stop",
+which wtdd/chat/listen.py handles itself) to exactly one registry tool call, so a text, the remote's button, the CLI and
+the MCP run the same code. run(name) wraps the call in one command.<name> ledger row and raises on any failure; the
+listener posts the truth either way (the result, or the error class and message). Nothing here fakes a success.
+Also hosts the primitives the tools wrap: lights() (living room, both protocols), dog_cmd(), look(), do_round().
+
+  python -m wtdd lights_dim percent=20         the same call as the chat command "dim"
+Facts: the living room is the four Hue lights of zone "living room" in wtdd/hue/zones.json (cloud CLIP v2, about 0.8 s
+per light incl. read-back) plus the Tuya strip (local protocol 3.5, about 0.4 s); a whole-room change reads back in
+about 2.7 s. Never any other light (SCOPE-LOCK: never a device that was not asked for). A dog command opens one WebRTC
+connection, runs, and closes it; the connect preflight refuses when the dog is unreachable.
+"""
 from __future__ import annotations
-import asyncio
 import json
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config
-from .ledger import step, rows
+from .ledger import step
 
-ROUTES = Path(__file__).parent / "dog" / "routes"
 LOOK = Path("~/Pictures/wtdd/look.jpg").expanduser()
-
-
-def _bridge():
-    from .hue.api import HueBridge
-    return HueBridge.from_env()
-
-
-ZONE = "living room"   # the only zone the chat may touch (docs/SCOPE-LOCK: never a device that was not asked for)
+ZONE = "living room"
 
 
 def lights(on: bool, bri: float | None = None) -> str:
-    """The living room, both protocols: the four Hue lights in the zone (cloud CLIP v2) and the Tuya LED strip
-    (local protocol 3.5). Never any other light. Each device is read back; a failure on either is reported, not hidden."""
+    """The living room, both protocols, each device read back; a failure on either is raised, not hidden."""
+    from .hue.api import HueBridge
     from .hue.__main__ import set_zone
     from .tuya.__main__ import strip
-    b = _bridge()
+    b = HueBridge.from_env()
     names = {l["id"]: l["metadata"]["name"] for l in b.lights()}
-    hue = set_zone(b, ZONE, on, bri)
-    done = [names.get(i, i[:8]) for i in hue]
-    st = strip(on=on, bri=(bri if on else None))
+    done = [names.get(i, i[:8]) for i in set_zone(b, ZONE, on, bri)]
+    st = strip(on=on, bri=bri if on else None)
     done.append(f"strip {'on' if st.get('on') else 'off'}" + (f" {st.get('brightness_pct')}%" if st.get("on") else ""))
-    verb = "on" if on else "off"
-    if bri is not None and on:
-        verb += f" at {int(bri)}%"
+    verb = "off" if not on else "on" + (f" at {int(bri)}%" if bri is not None else "")
     return f"{ZONE} lights {verb}: {', '.join(done)} (read back)"
 
 
-async def _with_dog(fn: Callable) -> Any:
-    from .dog.body import Body
-    body = Body()
-    await body.connect()
+def _via_api(tool: str, **args: Any) -> Any | None:
+    """While the API process runs it owns the dog's single WebRTC slot, so any other process sends dog tools to it.
+    Returns None when no API is up (then this process opens its own session). The API process itself never recurses."""
+    import os
+    if os.environ.get("WTDD_API_PROCESS"):
+        return None
+    import requests
+    port = os.environ.get("WTDD_API_PORT", "7788")
     try:
-        return await fn(body)
-    finally:
-        await body.close()
+        r = requests.post(f"http://127.0.0.1:{port}/tools/{tool}", json=args, timeout=120)
+    except requests.exceptions.ConnectionError:
+        return None
+    out = r.json()
+    if not out.get("ok"):
+        raise RuntimeError(out.get("error", f"{tool} failed via the API"))
+    return out["result"]
 
 
 def dog_cmd(name: str) -> str:
-    async def go(body):
-        code = await body.cmd(name)
-        st = body.state() or {}
-        return f"{name.lower()} done (status {code}, mode {st.get('mode')})"
-    return asyncio.run(_with_dog(go))
+    via = _via_api("dog_cmd", name=name)
+    if via is not None:
+        return via["result"]
+    from .dog.session import DogSession
+    s = DogSession.get()
+    code = s.cmd(name)
+    st = (s.state().get("state") or {})
+    return f"{name.lower()} done (status {code}, mode {st.get('mode')})"
 
 
-def look() -> dict[str, str]:
-    async def go(body):
-        await body.frame(LOOK)
-        return str(LOOK)
-    return {"text": "here's what i see", "file": asyncio.run(_with_dog(go))}
+def look(kind: str = "tilt") -> dict[str, Any]:
+    via = _via_api("dog_look", look=kind)
+    if via is not None:
+        return via
+    from .dog.session import DogSession
+    return DogSession.get().look(kind)
 
 
 def do_round() -> str:
-    from .dog.body import validate_route
+    via = _via_api("dog_round")
+    if via is not None:
+        return via["result"]
+    from .dog.body import ROUTES, validate_route
+    from .dog.session import DogSession
     steps = json.loads((ROUTES / "corridor.json").read_text())
-    problems = validate_route(steps)
-    if problems:
-        raise ValueError("corridor.json: " + "; ".join(problems))
-
-    async def go(body):
-        done = await body.route(steps, "corridor")
-        return f"round done: {len(done)} steps"
-    return asyncio.run(_with_dog(go))
-
-
-def status() -> str:
-    last = [r for r in rows(60) if r["tool"] not in ("chat.gate", "chat.claim", "llm.generate")][-3:]
-    if not last:
-        return "nothing in the ledger yet"
-    return "; ".join(f"{r['tool']} {'ok' if r['ok'] else 'FAILED'} {r.get('latency_ms', '?')}ms" for r in last)
+    validate_route(steps)   # raises ValueError on a bad route, before any connection; returns the plan otherwise
+    done = DogSession.get().run(DogSession.get().with_body(lambda b: b.route(steps, "corridor")), timeout=600)
+    return f"round done: {len(done)} steps"
 
 
 def _t(tool: str, **args: Any) -> Callable[[], Any]:
-    """A chat command is exactly one registry tool call (wtdd/tools): the same code path as the remote and the MCP."""
     from . import tools
     return lambda: tools.call(tool, **args)
 

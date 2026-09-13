@@ -4,7 +4,7 @@ You are an engineering partner building **what-the-dog-doin** at hackathon pace,
 
 The brief in one line: *build one useful, multi-step AI agent; connect it to at least three external apps; show how you know it works.* The third clause is not a footnote. Reliability and evaluation is scored on its own (25%), and the submission requires a written system and reliability brief. Evidence is a deliverable, not a nice-to-have.
 
-**Stack:** locked by Johnny in [`docs/SCOPE-LOCK.md`](./docs/SCOPE-LOCK.md). Until that section is filled, do not scaffold app code.
+**Stack:** one Python package (`wtdd/`), one venv, no framework. Devices: Unitree Go2 over `unitree_webrtc_connect`, Philips Hue over the cloud Remote API, a Tuya LED strip over local protocol 3.5, iMessage through this Mac's own Messages account. Models through OpenRouter (`wtdd/llm.py`). The map is `README.md`; what a file does lives in that file's docstring, and there are no other docs except the two submission artifacts in `docs/`.
 
 **The core tradeoff for this repo:** bias toward *shipping a working agent fast* over completeness and polish. "Fast" means *lazy-senior-dev fast* (reuse, fewest lines, fewest deps), NOT *fake-it fast*. Every step the agent claims to have taken must have actually been taken, and there must be a record of it. The rule that separates a real multi-app agent from a demo puppet is §2. §3 is how we win the 25%.
 
@@ -28,12 +28,10 @@ Execution plus reliability is 55%. A boring agent that provably works beats a cl
 
 ## Read first (in order)
 
-0. [`docs/PLAN.md`](./docs/PLAN.md): the day on one page and the definition of done. Read at 9:00.
-1. [`docs/BRIEF.md`](./docs/BRIEF.md): the brief, rubric, and schedule, verbatim.
-2. [`docs/SCOPE-LOCK.md`](./docs/SCOPE-LOCK.md): the ONE agent. Job, apps, steps, crystal I/O, CUT list, stack. **Johnny fills this. Read it before every build session. If it is empty, the session is sharpening, not building.**
-3. [`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md): the submission doc. Fill it as we build, not at 3:45.
-4. [`docs/JUDGES.md`](./docs/JUDGES.md): who is grading and what they reward. Read the top section and §10 once; the rest is reference.
-5. [`docs/TASTE.md`](./docs/TASTE.md): the visual system. Read before any UI.
+1. [`README.md`](./README.md): how to run it and where everything is.
+2. The docstring at the top of whichever file you are about to touch. It states purpose, how to run, and the facts measured on the real devices (protocol details, timings, gotchas). Keep it true when you change the file.
+3. [`docs/RELIABILITY-BRIEF.md`](./docs/RELIABILITY-BRIEF.md): the submission doc and the measured runs. Fill it as facts land.
+4. [`docs/DEMO-SCRIPT.md`](./docs/DEMO-SCRIPT.md): the two-minute video, shot by shot.
 
 ---
 
@@ -167,7 +165,7 @@ Under hackathon pressure he wants the agent working first. When you cut a corner
 
 ## 8. Run it
 
-Filled in once the stack is locked. See [`README.md`](./README.md).
+See [`README.md`](./README.md). The API process (`python -m wtdd.api`) owns the dog's single WebRTC slot; every other process reaches the dog through it.
 
 ---
 

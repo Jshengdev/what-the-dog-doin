@@ -1,10 +1,17 @@
-"""Local HTTP API over the tools folder, plus the static UI. Stdlib only.
+"""The local HTTP API over the tool registry, plus the static remote (ui/). Stdlib only, bound to 127.0.0.1.
 
-  GET  /tools                 -> [{name, doc, args}]
-  POST /tools/<name>  {args}  -> the tool's result (JSON) or {"error": ...} with 500
-  GET  /ledger?n=20           -> last rows
-  GET  /                      -> ui/index.html (the remote and the map)
-Every tool call is already a ledger row; the API adds nothing on top.
+  python -m wtdd.api              serves http://127.0.0.1:7788/   (python -m wtdd.api 8000 for another port)
+  GET  /                          ui/index.html (the remote and the map page); any other path is a file under ui/
+                                  (house.svg; tokens.css is a symlink into ../../taste-library and is followed)
+  GET  /tools                     [{name, doc, args}] for every tool
+  POST /tools/<name>  {args}      {ok, tool, args, result}, or 500 {ok: false, tool, args, error}
+  GET  /ledger?n=25               the last n ledger rows (the page polls this every 2 s)
+  GET  /map                       ui/map.json
+  POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
+Every tool call is already its own ledger row; the API adds one stderr log line per request and nothing else.
+CORS headers (and OPTIONS) are sent so the page also works when opened from another origin; today it is same-origin.
+The ui/index.html buttons are these tools: lights_status, identify, walk_path, lights_on, lights_off, lights_dim,
+strip_temp, strip_fade, strip_set, light_show, hue_signal, dog_on_fire.
 """
 from __future__ import annotations
 import json
@@ -12,25 +19,34 @@ import mimetypes
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import tools
 from .config import ROOT
+from .field import MAP
+from pathlib import Path
+
+PICTURES = Path("~/Pictures/wtdd").expanduser()
 from .ledger import log, rows
 
 UI = ROOT / "ui"
 
 
 class H(BaseHTTPRequestHandler):
-    def _json(self, code: int, obj) -> None:
-        body = json.dumps(obj, default=str).encode()
+    def _send(self, code: int, ctype: str, body: bytes) -> None:
         self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
+
+    def _json(self, code: int, obj) -> None:
+        self._send(code, "application/json", json.dumps(obj, default=str).encode())
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        return json.loads(self.rfile.read(n)) if n else {}
 
     def do_OPTIONS(self):  # noqa: N802
         self.send_response(204)
@@ -44,36 +60,44 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/tools":
             return self._json(200, tools.describe())
         if u.path == "/map":
-            return self._json(200, json.loads((UI / "map.json").read_text()))
+            return self._json(200, json.loads(MAP.read_text()))
         if u.path == "/ledger":
-            n = int((parse_qs(u.query).get("n") or ["20"])[0])
-            return self._json(200, rows(n))
+            return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
+        if u.path == "/dog/state":
+            from .dog.session import DogSession
+            return self._json(200, DogSession.get().state())
+        if u.path.startswith("/pictures/"):
+            name = u.path[len("/pictures/"):]
+            f = PICTURES / name
+            if ".." in name or not f.is_file():
+                return self._json(404, {"error": f"no picture {name}"})
+            return self._send(200, mimetypes.guess_type(str(f))[0] or "image/jpeg", f.read_bytes())
         rel = "index.html" if u.path in ("", "/") else u.path.lstrip("/")
-        if ".." in rel:
-            return self._json(404, {"error": "not found"})
-        f = UI / rel   # symlinks inside ui/ (tokens.css -> taste-library) are allowed
-        if not f.is_file():
+        f = UI / rel
+        if ".." in rel or not f.is_file():
             return self._json(404, {"error": f"no {rel}"})
-        data = f.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(f))[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        self._send(200, mimetypes.guess_type(str(f))[0] or "application/octet-stream", f.read_bytes())
 
     def do_POST(self):  # noqa: N802
         u = urlparse(self.path)
-        if u.path == "/map":   # the map page saves its path and zones here
-            n = int(self.headers.get("Content-Length") or 0)
-            data = json.loads(self.rfile.read(n) or b"{}")
-            (UI / "map.json").write_text(json.dumps(data, indent=2) + "\n")
+        if u.path == "/map":
+            data = self._body()
+            MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), zones=len(data.get("zones", [])))
             return self._json(200, {"ok": True})
+        if u.path in ("/dog/drive", "/dog/stop"):
+            from .dog.session import DogSession
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            s = DogSession.get()
+            try:
+                out = s.stop() if u.path == "/dog/stop" else s.drive(body.get("x", 0), body.get("y", 0), body.get("z", 0))
+                return self._json(200, {"ok": True, **out})
+            except Exception as e:  # noqa: BLE001  (a connect failure is reported, never hidden)
+                return self._json(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         if not u.path.startswith("/tools/"):
             return self._json(404, {"error": "not found"})
-        name = u.path[len("/tools/"):]
-        n = int(self.headers.get("Content-Length") or 0)
-        args = json.loads(self.rfile.read(n) or b"{}") if n else {}
+        name, args = u.path[len("/tools/"):], self._body()
         t0 = time.perf_counter()
         try:
             out = tools.call(name, **args)
@@ -88,6 +112,8 @@ class H(BaseHTTPRequestHandler):
 
 
 def main(argv: list[str] | None = None) -> int:
+    import os
+    os.environ["WTDD_API_PROCESS"] = "1"   # this process owns the dog session; others reach it over HTTP
     port = int((argv or sys.argv[1:] or ["7788"])[0])
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     log("api", f"serving http://127.0.0.1:{port}/  tools={len(tools.registry())} ui={UI}")

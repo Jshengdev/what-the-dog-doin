@@ -1,4 +1,6 @@
-"""Recognition and the listener state machine, offline."""
+"""Recognition and the listener state machine, offline. Run: python -m unittest wtdd.chat.test_triggers -v
+The from-me rule is tested in its strict form (WTDD_ALLOW_SELF=0); the wake demo and the model path are switched off
+(WTDD_WAKE_SHOW=0, WTDD_AGENT=0) so the machine is wake -> command -> stop with a stubbed commands.run."""
 from __future__ import annotations
 import os
 import tempfile
@@ -7,7 +9,7 @@ from unittest import mock
 
 os.environ["WTDD_WAKE_SHOW"] = "0"
 os.environ["WTDD_AGENT"] = "0"
-os.environ["WTDD_ALLOW_SELF"] = "0"   # the from-me rule is tested in its strict form        # the model fallback is not part of the state-machine tests   # the wake demo (lights + picture) is not part of the state-machine tests
+os.environ["WTDD_ALLOW_SELF"] = "0"
 os.environ["WTDD_TRIGGERS"] = "what the dog doin,what the dog doing,whats the dog doing,what is the dog doing,wtdd,yo dog,hey dog"
 os.environ["WTDD_COMMANDS"] = "do a round,lights on,lights off,dim,bright,show,sit,stand,hello,look,status,stop"
 os.environ.setdefault("WTDD_LEDGER", os.path.join(tempfile.mkdtemp(), "ledger.jsonl"))
@@ -43,7 +45,7 @@ class Recognize(unittest.TestCase):
 def _m(text, sender="+15550001", guid=None, from_me=0):
     _m.n += 1
     return {"rowid": _m.n, "guid": guid or f"g{_m.n}", "text": text, "is_from_me": from_me, "sender": sender,
-            "ts_utc": "2026-09-13 08:00:00", "attachments": [], "has_attachments": 0}
+            "ts_utc": "2026-09-13 08:00:00", "attachments": []}
 _m.n = 0
 
 

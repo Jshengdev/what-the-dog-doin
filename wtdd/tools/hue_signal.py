@@ -1,5 +1,4 @@
 """Alternate one Hue colour light between red and blue for N seconds (the alert), read back."""
-NAME, DOC = "hue_signal", __doc__.strip()
 ARGS = {"light": {"type": "string", "default": "special", "doc": "Hue light name or id"},
         "seconds": {"type": "number", "default": 5}}
 

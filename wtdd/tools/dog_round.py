@@ -1,5 +1,4 @@
 """Run the scripted corridor route on the dog (wtdd/dog/routes/corridor.json) with obstacle avoidance on."""
-NAME, DOC = "dog_round", __doc__.strip()
 ARGS = {}
 
 

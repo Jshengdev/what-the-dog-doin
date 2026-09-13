@@ -1,12 +1,49 @@
 """The body: one Unitree Go2 over one WebRTC connection, held for the process lifetime.
 
-Every driver fact used here was read from the installed source
-(.venv/lib/python3.13/site-packages/unitree_webrtc_connect/: webrtc_driver.py, webrtc_datachannel.py,
-webrtc_video.py, msgs/pub_sub.py, constants.py, multicast_scanner.py, unitree_auth.py) and the upstream
-examples (examples/go2/data_channel/{sportmode,sportmodestate,obstacles_avoid}, video/camera_stream).
-Nothing in this file has run against a live dog yet. See GOAL.md.
+Goal. One process holds a single connection to the dog and exposes: state (mode, odometry position, velocity,
+IMU, obstacle range) as a stream, the predefined sport commands (Sit, RiseSit, StandUp, StandDown, Hello, Stretch,
+Move x/y/z for a duration, StopMove, Dance1), a scripted route runner (a JSON list of cmd/move/sleep/look steps
+with obstacle avoidance on), and the newest camera frame as a JPEG on demand. Every call writes one ledger row
+with the state read back after it.
 
-Never import cv2 in this process: the av and cv2 wheels both bundle libavdevice and clash.
+Run. `python -m wtdd.dog {commands,check,probe,state,cmd,move,avoid,route,frame}` (see __main__.py). From the
+chat and the remote the same Body is reached through wtdd/commands.py (dog_cmd, look, do_round). Done when:
+`commands` lists the 49 SPORT_CMD names; `probe` reports a reachable dog or the precise missing pieces; `state`
+prints a live row; `cmd Sit` then `cmd RiseSit` produce ledger rows whose state_after mode changed; `frame` writes
+a JPEG; `route corridor` runs wtdd/dog/routes/corridor.json.
+
+Run live so far (ledger.jsonl, 2026-09-13, dog at 192.168.12.1 with no AES key): connect 1.0 to 2.5 s; the state
+stream arrives at 20.0 Hz (59 samples in 3 s, mode 0); the first camera frame (1280x720, JPEG about 157 KB) lands
+within 0.75 s of switching the channel on. cmd, move, avoid and route have not run against the dog yet.
+
+Driver facts (read from the installed source of unitree_webrtc_connect 2.2.0 in .venv: webrtc_driver.py,
+webrtc_datachannel.py, webrtc_video.py, msgs/pub_sub.py, constants.py, multicast_scanner.py, unitree_auth.py, and
+its go2 examples sportmode, sportmodestate, obstacles_avoid, camera_stream).
+  connection: UnitreeWebRTCConnection(WebRTCConnectionMethod.LocalSTA, ip=..., aes_128_key=...); await connect().
+  requests:   conn.datachannel.pub_sub.publish_request_new(RTC_TOPIC["SPORT_MOD"], {"api_id": SPORT_CMD["Hello"]}).
+  mode:       RTC_TOPIC["MOTION_SWITCHER"] api 1001 (query) / 1002 (set {"name": "normal"}); the dog stands up
+              while switching, the example waits 5 s.
+  state:      pub_sub.subscribe(RTC_TOPIC["LF_SPORT_MOD_STATE"], cb); message["data"] is the state dict.
+  avoidance:  RTC_TOPIC["OBSTACLES_AVOID"] with OBSTACLES_AVOID_API {SWITCH_SET 1001, SWITCH_GET 1002, MOVE 1003,
+              USE_REMOTE_COMMAND_FROM_API 1004}; MOVE has no reply. Joystick-style drive also exists via
+              publish_without_callback(RTC_TOPIC["WIRELESS_CONTROLLER"], {lx, ly, rx, ry, keys}) at 50 Hz (unused).
+  camera:     conn.video.add_track_callback(cb) then conn.video.switchVideoChannel(True); the driver discards
+              frame 1 and awaits the callback with the live track. PIL via av; never import cv2 in this process,
+              the av and cv2 wheels both bundle libavdevice and clash.
+  auth:       firmware 1.1.15+ needs aes_128_key, fetched once with
+              `unitree-fetch-aes-key --email <unitree account> --password '...' --device-type Go2`.
+  discovery:  discover_ip_sn() is multicast 231.1.1.1:10131; a dog in STA mode on another subnet does not answer.
+  signaling:  the dog listens on TCP 9991 (con_notify) or 8081 (legacy /offer).
+  navigation: the driver names LiDAR mapping and navigation topics but implements no example for them; there is
+              no waypoint navigation here. A route is a scripted list of moves with avoidance on
+              (TrajectoryFollow 1018 exists for short trajectories if ever needed).
+
+Johnny must do. 1) Put the dog on the house Wi-Fi in STA mode via the Unitree Go app and set UNITREE_ROBOT_IP
+in .env. 2) Read the firmware version in the app; if 1.1.15 or newer, fetch the key (above) into
+UNITREE_AES_128_KEY. 3) Clear a 3 m corridor and stand by the dog for the first `cmd` calls.
+
+Never. No command to the dog unless probe() passed in this process (connect() enforces it); no flips, no jumps
+(ALLOW below); no silent reconnect loops; never two moves at once; no git commit (the coordinator commits).
 """
 from __future__ import annotations
 
@@ -30,20 +67,19 @@ from unitree_webrtc_connect.constants import DATA_CHANNEL_TYPE
 from unitree_webrtc_connect.unitree_auth import _probe_tcp_port
 
 from .. import config
-from ..config import ROOT
 from ..ledger import log, step
 
 try:
     from unitree_webrtc_connect.constants import OBSTACLES_AVOID_API
-except ImportError:  # older driver: the topic exists, the api ids do not
+except ImportError:  # older driver: avoid() and route() refuse; commands/check/probe/state/cmd/move/frame still run
     OBSTACLES_AVOID_API = None
-    log("dog", "WARN OBSTACLES_AVOID_API is missing from the installed driver; avoid() will refuse")
+    log("dog", "WARN OBSTACLES_AVOID_API is missing from the installed unitree_webrtc_connect; avoid and route are refused")
 
-# Allowlist. cmd() refuses (raises, recorded in the ledger) anything not listed.
-# Deliberately absent: FrontFlip, LeftFlip, RightFlip, BackFlip, FrontJump, FrontPounce, Handstand,
-# StandOut, Bound, MoonWalk, Wallow, TrajectoryFollow, ContinuousGait, LeadFollow, FreeWalk, Euler,
-# SwitchGait, BodyHeight, FootRaiseHeight, EconomicGait, SwitchJoystick, CrossStep, OnesidedStep, CrossWalk.
+# Allowlist. cmd() refuses (raises, recorded in the ledger) anything not listed: no flips, jumps, gait or height
+# changes. `python -m wtdd.dog commands` prints the full allow/deny table.
 ALLOW = frozenset({
+    "Euler", "Pose",   # body pose on the legs (pitch the camera down for a look), no locomotion
+
     "Damp", "BalanceStand", "StopMove", "StandUp", "StandDown", "RecoveryStand", "Move",
     "Sit", "RiseSit", "Hello", "Stretch", "Content", "Scrape", "WiggleHips", "FingerHeart",
     "Dance1", "Dance2", "GetState", "GetBodyHeight", "GetSpeedLevel", "SpeedLevel",
@@ -52,7 +88,7 @@ _missing = ALLOW - SPORT_CMD.keys()
 if _missing:
     raise ImportError(f"[wtdd:dog] allowlist names not in the installed SPORT_CMD: {sorted(_missing)}")
 
-MAX_SPEED = 0.8            # m/s for x and y, rad/s for z (ARCHITECTURE section 3: DogMove.speed le=0.8)
+MAX_SPEED = 0.8            # m/s for x and y, rad/s for z; the ceiling for any move
 MAX_MOVE_S = 20.0          # per move() call
 MOVE_HZ = 10
 CONNECT_TIMEOUT_S = 30.0   # the driver's own data-channel wait is 15 s inside this
@@ -63,6 +99,7 @@ FRAME_STALE_S = 2.0
 STATE_FRESH_S = 2.0        # wait for a state sample newer than the call
 MOTION_SWITCHER_GET, MOTION_SWITCHER_SET = 1001, 1002   # sportmode example
 PICTURES = Path.home() / "Pictures" / "wtdd"
+ROUTES = Path(__file__).parent / "routes"
 
 
 def probe(scan: bool = True) -> tuple[list[tuple[str, str, str]], bool]:
@@ -70,19 +107,18 @@ def probe(scan: bool = True) -> tuple[list[tuple[str, str, str]], bool]:
     row instead of crashing the table; nothing here fakes success. Writes one dog.probe ledger row."""
     rows: list[tuple[str, str, str]] = []
 
-    def check(name: str, fn) -> str:
+    def check(name: str, fn) -> None:
         try:
             status, detail = fn()
         except Exception as e:  # noqa: BLE001  (reported on the row, the table always prints)
             status, detail = "fail", f"{type(e).__name__}: {e}"
         rows.append((name, status, detail))
-        return status
 
     ip = config.maybe("UNITREE_ROBOT_IP")
     key = config.maybe("UNITREE_AES_128_KEY")
 
     def venv():
-        inside = Path(sys.prefix).resolve() == (ROOT / ".venv").resolve()
+        inside = Path(sys.prefix).resolve() == (config.ROOT / ".venv").resolve()
         return ("ok" if inside else "fail"), f"python {sys.version.split()[0]} at {sys.prefix}"
 
     def driver():
@@ -137,8 +173,9 @@ def probe(scan: bool = True) -> tuple[list[tuple[str, str, str]], bool]:
     return rows, reachable
 
 
-def validate_route(steps: Any) -> list[str]:
-    """Static check of a route (no connection). Returns one description per step; raises ValueError."""
+def _parse(steps: Any) -> list[tuple[str, Any, str]]:
+    """Static check of a route (no connection): one (kind, argument, description) per step; raises ValueError.
+    kind cmd -> (name, parameter); move -> (x, y, z, seconds); sleep -> seconds; look -> None."""
     if not isinstance(steps, list) or not steps:
         raise ValueError("route must be a non-empty JSON list of steps")
     plan = []
@@ -153,29 +190,37 @@ def validate_route(steps: Any) -> list[str]:
                 raise ValueError(f"step {i + 1}: {name!r} is not a SPORT_CMD")
             if name not in ALLOW:
                 raise ValueError(f"step {i + 1}: {name!r} is not in the allowlist")
-            plan.append(f"cmd {name}" + (f" {s['parameter']}" if "parameter" in s else ""))
+            arg, desc = (name, s.get("parameter")), f"cmd {name}" + (f" {s['parameter']}" if "parameter" in s else "")
         elif kind == "move":
             m = s["move"]
-            x, y, z, sec = (float(m.get("x", 0)), float(m.get("y", 0)), float(m.get("z", 0)), float(m["seconds"]))
+            x, y, z, sec = float(m.get("x", 0)), float(m.get("y", 0)), float(m.get("z", 0)), float(m["seconds"])
             if max(abs(x), abs(y), abs(z)) > MAX_SPEED or not 0 < sec <= MAX_MOVE_S:
                 raise ValueError(f"step {i + 1}: move needs |x|,|y|,|z| <= {MAX_SPEED} and 0 < seconds <= {MAX_MOVE_S}")
-            plan.append(f"move x={x} y={y} z={z} {sec}s")
+            arg, desc = (x, y, z, sec), f"move x={x} y={y} z={z} {sec}s"
         elif kind == "sleep":
             sec = float(s["sleep"])
             if not 0 < sec <= 60:
                 raise ValueError(f"step {i + 1}: sleep must be 0 < seconds <= 60")
-            plan.append(f"sleep {sec}s")
+            arg, desc = sec, f"sleep {sec}s"
         elif kind == "look":
             if s["look"] is not True:
                 raise ValueError(f"step {i + 1}: look must be true")
-            plan.append("look")
+            arg, desc = None, "look"
         else:
             raise ValueError(f"step {i + 1}: unknown step kind {kind!r}")
+        plan.append((kind, arg, desc))
     return plan
 
 
+def validate_route(steps: Any) -> list[str]:
+    """Static check of a route (no connection). Returns one description per step; raises ValueError on a bad
+    route (never an empty list: a valid route has at least one step)."""
+    return [desc for _kind, _arg, desc in _parse(steps)]
+
+
 class Body:
-    """One connection, one asyncio loop. connect() then cmd/move/avoid/route/frame, then close()."""
+    """One connection, one asyncio loop. connect() then cmd/move/avoid/route/frame, then close();
+    or `async with Body() as body:` which does both."""
 
     def __init__(self) -> None:
         self.ip = config.maybe("UNITREE_ROBOT_IP")
@@ -210,7 +255,7 @@ class Body:
                 await conn.disconnect()
                 raise TimeoutError(f"connect to {self.ip} did not complete within {CONNECT_TIMEOUT_S}s") from None
             self.conn = conn
-            # Registered before the channel is ever switched on, so the first frame is handed to us (VISION section 1).
+            # Registered before the channel is ever switched on, so the first frame is handed to us.
             conn.video.add_track_callback(self._drain)
             conn.datachannel.pub_sub.subscribe(RTC_TOPIC["LF_SPORT_MOD_STATE"], self._on_state)
             r["state_after"] = await self.fresh_state()
@@ -222,6 +267,13 @@ class Body:
             await self.conn.disconnect()
             self.conn = None
             log("dog", "closed", state_n=self._st_n, frames=self._fr_n)
+
+    async def __aenter__(self) -> Body:
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
 
     # ---- state
 
@@ -254,7 +306,7 @@ class Body:
 
     async def fresh_state(self, required: bool = False) -> dict | None:
         """Snapshot from a sample that arrived after this call (up to STATE_FRESH_S). required=True raises if
-        none arrived: a command is never reported done without a state read-back (ARCHITECTURE section 3)."""
+        none arrived: a command is never reported done without a state read-back."""
         n0, t0 = self._st_n, time.monotonic()
         while self._st_n == n0 and time.monotonic() - t0 < STATE_FRESH_S:
             await asyncio.sleep(0.02)
@@ -298,7 +350,7 @@ class Body:
         ps.publish_without_callback(topic, payload, DATA_CHANNEL_TYPE["REQUEST"])
 
     async def _ensure_normal(self) -> None:
-        """Motion mode "normal" once per process (sportmode example: query 1001, set 1002, wait 5 s)."""
+        """Motion mode ready once per process: "normal" or "mcf" as found; anything else is switched to "normal" (query 1001, set 1002, wait 5 s)."""
         if self._normal:
             return
         with step("dog", "dog.mode", "unitree", {"want": "normal"}, self.state()) as r:
@@ -307,7 +359,9 @@ class Body:
                 raise RuntimeError(f"motion_switcher query refused: code={code}")
             was = json.loads(data["data"])["name"]
             switched = False
-            if was != "normal":
+            # "mcf" is the motion controller on firmware >= 1.1.7 (this dog); it refuses a switch to "normal"
+            # (code 7004) and takes the same Sit/Hello/Move/StandUp ids, so it counts as ready.
+            if was not in ("normal", "mcf"):
                 code, _ = await self._request(RTC_TOPIC["MOTION_SWITCHER"], MOTION_SWITCHER_SET, {"name": "normal"})
                 if code != 0:
                     raise RuntimeError(f"motion_switcher set normal refused: code={code} (was {was})")
@@ -334,10 +388,20 @@ class Body:
             r["state_after"] = await self.fresh_state(required=True)
         return code
 
+    async def _tick(self, via: str, x: float, y: float, z: float) -> int | None:
+        """One velocity tick. via "avoid": OBSTACLES_AVOID MOVE 1003, no reply, returns None.
+        via "sport": SPORT_CMD Move 1008, returns the ack code."""
+        if via == "avoid":
+            self._send_noreply(RTC_TOPIC["OBSTACLES_AVOID"], OBSTACLES_AVOID_API["MOVE"],
+                               {"x": x, "y": y, "yaw": z, "mode": 0})
+            return None
+        code, _ = await self._request(RTC_TOPIC["SPORT_MOD"], SPORT_CMD["Move"], {"x": x, "y": y, "z": z},
+                                      timeout=TICK_TIMEOUT_S)
+        return code
+
     async def move(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, seconds: float = 1.0) -> dict:
         """Velocity command at MOVE_HZ for `seconds`, then StopMove. x forward m/s, y left m/s, z yaw rad/s.
-        With obstacle avoidance on, the velocity goes to the avoidance service (OBSTACLES_AVOID MOVE 1003,
-        no reply); otherwise to the sport service (SPORT_CMD Move 1008, one ack per tick)."""
+        With obstacle avoidance on, the velocity goes to the avoidance service; otherwise to the sport service."""
         args = {"x": x, "y": y, "z": z, "seconds": seconds}
         with step("dog", "dog.move", "unitree", args, self.state()) as r:
             if self._moving:
@@ -346,19 +410,15 @@ class Body:
                 raise ValueError(f"move refused: |x|,|y|,|z| <= {MAX_SPEED} and 0 < seconds <= {MAX_MOVE_S}")
             await self._ensure_normal()
             # wtdd: which of the two velocity paths the dog honours with avoidance on is UNVERIFIED; the swap
-            # is one line each way (see the report). Both end with SPORT StopMove and a state read-back.
+            # is one line in _tick. Both end with SPORT StopMove and a state read-back.
             via = "avoid" if self._avoid else "sport"
             n, sent, acked = max(1, round(seconds * MOVE_HZ)), 0, 0
             t0 = time.perf_counter()
             self._moving = True
             try:
                 for i in range(n):
-                    if via == "avoid":
-                        self._send_noreply(RTC_TOPIC["OBSTACLES_AVOID"], OBSTACLES_AVOID_API["MOVE"],
-                                           {"x": x, "y": y, "yaw": z, "mode": 0})
-                    else:
-                        code, _ = await self._request(RTC_TOPIC["SPORT_MOD"], SPORT_CMD["Move"],
-                                                      {"x": x, "y": y, "z": z}, timeout=TICK_TIMEOUT_S)
+                    code = await self._tick(via, x, y, z)
+                    if code is not None:
                         if code != 0:
                             raise RuntimeError(f"Move refused at tick {i + 1}/{n}: code={code}")
                         acked += 1
@@ -368,8 +428,7 @@ class Body:
                 self._moving = False
                 elapsed = time.perf_counter() - t0
                 if via == "avoid":
-                    self._send_noreply(RTC_TOPIC["OBSTACLES_AVOID"], OBSTACLES_AVOID_API["MOVE"],
-                                       {"x": 0, "y": 0, "yaw": 0, "mode": 0})
+                    await self._tick(via, 0, 0, 0)
                 try:
                     stop_code, _ = await self._request(RTC_TOPIC["SPORT_MOD"], SPORT_CMD["StopMove"])
                 except Exception:
@@ -389,7 +448,7 @@ class Body:
         (USE_REMOTE_COMMAND_FROM_API) so move() can drive while it is on."""
         with step("dog", "dog.avoid", "unitree", {"on": on}, self.state()) as r:
             if OBSTACLES_AVOID_API is None:
-                raise RuntimeError("OBSTACLES_AVOID_API is missing from the installed driver; cannot toggle avoidance")
+                raise RuntimeError("OBSTACLES_AVOID_API is missing from the installed driver; avoid and route are refused")
             topic = RTC_TOPIC["OBSTACLES_AVOID"]
             set_code, _ = await self._request(topic, OBSTACLES_AVOID_API["SWITCH_SET"], {"enable": on})
             if set_code != 0:
@@ -413,21 +472,19 @@ class Body:
     async def route(self, steps: list, name: str = "route") -> list[dict]:
         """Runs a validated list of steps with obstacle avoidance on; every step writes its own row with a
         state read-back. Avoidance is switched back off afterwards, also on failure."""
-        plan = validate_route(steps)
-        with step("dog", "dog.route", "unitree", {"name": name, "steps": plan}, self.state()) as r:
+        plan = _parse(steps)
+        with step("dog", "dog.route", "unitree", {"name": name, "steps": [d for _, _, d in plan]}, self.state()) as r:
             await self.avoid(True)
             done: list[dict] = []
             try:
-                for i, (s, desc) in enumerate(zip(steps, plan)):
-                    log("dog", f"route {name} step {i + 1}/{len(steps)}: {desc}")
-                    if "cmd" in s:
-                        res: Any = await self.cmd(s["cmd"], s.get("parameter"))
-                    elif "move" in s:
-                        m = s["move"]
-                        res = await self.move(float(m.get("x", 0)), float(m.get("y", 0)), float(m.get("z", 0)),
-                                              float(m["seconds"]))
-                    elif "sleep" in s:
-                        await asyncio.sleep(float(s["sleep"]))
+                for i, (kind, arg, desc) in enumerate(plan):
+                    log("dog", f"route {name} step {i + 1}/{len(plan)}: {desc}")
+                    if kind == "cmd":
+                        res: Any = await self.cmd(*arg)
+                    elif kind == "move":
+                        res = await self.move(*arg)
+                    elif kind == "sleep":
+                        await asyncio.sleep(arg)
                         res = self.state()
                     else:
                         out = PICTURES / f"{time.strftime('%Y%m%dT%H%M%S')}_{name}_{i + 1}.jpg"
@@ -435,7 +492,7 @@ class Body:
                     done.append({"step": i + 1, "desc": desc, "result": res})
             finally:
                 await self.avoid(False)
-            r["response_or_error"] = {"done": len(done), "of": len(steps)}
+            r["response_or_error"] = {"done": len(done), "of": len(plan)}
             r["state_after"] = await self.fresh_state()
         return done
 

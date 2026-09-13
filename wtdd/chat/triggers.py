@@ -1,8 +1,14 @@
 """Wake phrase and command recognition. Fuzzy on purpose: housemates type fast and misspell.
 
-Wake phrases come from WTDD_TRIGGERS, commands from WTDD_COMMANDS (comma-separated, in .env). A message wakes the dog if
-a wake phrase appears in it (after normalizing case, quotes, and punctuation), or a sliding window of the message is at
-least 80% similar to one, or it contains the tokens "dog" and "doin"/"doing". A command matches at 75% similarity.
+Run: python -m wtdd.chat triggers "what teh dog doin" "lights off pls"   (prints both lists, then wake/command per phrase)
+
+Wake phrases come from WTDD_TRIGGERS, commands from WTDD_COMMANDS (comma-separated, in .env; defaults below). A message
+wakes the dog if a wake phrase appears in it (after normalizing case, quotes, and punctuation), or a sliding window of the
+message is at least 80% similar to a wake phrase of three or more words, or its first word is "dog" ("dog, do a round"),
+or it contains the tokens "dog" and "doin"/"doing". A command matches at 75% similarity over the same windows.
+Verified: "what teh dog doin" scores 0.94 against "what the dog doin"; "sitt" matches "sit"; "the dog is cute" and
+"hotdog time" do not wake. The two-word phrases ("yo dog", "hey dog") match only as exact substrings, so "the dog" can
+never fire them.
 """
 from __future__ import annotations
 import difflib

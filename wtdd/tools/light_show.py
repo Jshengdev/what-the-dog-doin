@@ -1,6 +1,5 @@
 """The show: living room on, dim, bright, the corridor sweep a to c, a strip fade, red/blue on one lamp, then back to
 how it was. About 25 seconds. Every step is its own receipt; returns the step count and the first failure if any."""
-NAME, DOC = "light_show", __doc__.strip()
 ARGS = {"signal_seconds": {"type": "number", "default": 4}}
 
 
@@ -32,6 +31,6 @@ def run(signal_seconds=4):
             s = before.get("strip", {})
             if "on" in s:
                 call("strip_set", on=bool(s["on"]), percent=s.get("brightness_pct"))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001  (reported in the result, not hidden)
             failed = failed or f"restore: {type(e).__name__}: {str(e)[:80]}"
     return {"steps": len(steps), "done": done, "failed": failed}
