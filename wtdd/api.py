@@ -13,6 +13,8 @@
   POST /dog/calibrate {p, heading_deg | toward}   the dog is at map point p now, facing heading_deg (or facing point `toward`)
   POST /dog/follow {reach_px?}    follow ui/map.json's path from the nearest waypoint, pausing at its stops; /dog/resume continues
   POST /dog/avoid {on}            the dog's obstacle avoidance on/off with read-back (the follower turns it on itself)
+  POST /dog/record {on}           on: record the believed pose while driving; off: the trace becomes ui/map.json's path + stops
+  POST /dog/mark                  a stop at the current believed position, while recording
   GET  /dog/frame.jpg             the newest camera frame (no ledger row; the page's live view), 503 without a dog
   GET  /map                       ui/map.json
   POST /map  {path, lights, ...}  rewrites ui/map.json (the page saves the drawn path, lights and rooms here before every walk)
@@ -111,7 +113,7 @@ class H(BaseHTTPRequestHandler):
             MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), zones=len(data.get("zones", [])))
             return self._json(200, {"ok": True})
-        if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid"):
+        if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid", "/dog/record", "/dog/mark"):
             import math
             from .dog import nav
             from .dog.session import DogSession
@@ -132,6 +134,16 @@ class H(BaseHTTPRequestHandler):
                     out = {"follow": s.follow(m["path"], [int(i) for i in m.get("stops", [])], float(body.get("reach_px", 30)))}
                 elif u.path == "/dog/avoid":          # {on: true|false}: the dog's own obstacle avoidance, read back
                     out = {"avoid": s.avoid(bool(body.get("on", True)))}
+                elif u.path == "/dog/mark":           # a stop at the current believed position, while recording
+                    out = {"rec": s.mark()}
+                elif u.path == "/dog/record":         # {on: true} start; {on: false} stop and write the trace as the map's path + stops
+                    rec = s.record(bool(body.get("on", True)))
+                    if not rec["active"]:
+                        m = json.loads(MAP.read_text())
+                        m["path"], m["stops"] = rec["path"], rec["stops"]
+                        MAP.write_text(json.dumps(m, indent=2) + "\n")
+                        log("api", "map saved from the recorded route", points=len(rec["path"]), stops=rec["stops"])
+                    out = {"rec": rec}
                 else:
                     out = {"follow": s.resume()}
                 return self._json(200, {"ok": True, **out})

@@ -39,6 +39,7 @@
   .handle { fill: #fff; stroke: #262323; stroke-width: 2; cursor: grab; }
   .dogdot { fill: #e8590c; stroke: #fff; stroke-width: 3; cursor: grab; } .dognose { stroke: #e8590c; stroke-width: 4; stroke-linecap: round; }
   .cone { fill: rgba(232,89,12,.14); stroke: rgba(232,89,12,.6); stroke-width: 2; } .conetip { fill: #fff; stroke: #e8590c; stroke-width: 3; cursor: grab; }
+  .trace { fill: none; stroke: #e8590c; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: .8; } .mark { fill: #e8590c; stroke: #fff; stroke-width: 2; }
   .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 17px; fill: #262323; paint-order: stroke; stroke: #fbfaf7; stroke-width: 5px; user-select: none; pointer-events: none; }
   .levels { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; }
   .bar { display: inline-block; height: 7px; background: #ffcc44; border-radius: 4px; vertical-align: middle; margin-left: 8px; transition: width .2s; }
@@ -205,6 +206,7 @@ function App() {
                 <text class="lbl" x=${x} y=${y - 22} text-anchor="middle">${L.label}${lv ? ` · ${lv}%` : ""}</text></g>`;
             })}
             ${pending && html`<circle class="handle" cx=${pending[0]} cy=${pending[1]} r="9"/>`}
+            ${dog?.rec && html`<g><polyline class="trace" points=${dog.rec.points.map(p => p.join(",")).join(" ")}/>${dog.rec.marks.map((m, i) => html`<circle key=${"m" + i} class="mark" cx=${m[0]} cy=${m[1]} r="10"/>`)}</g>`}
             ${(dogDrag || dog?.map) && (() => {
               const D = dogDrag || dog.map, [x, y] = D.p, h = D.heading_deg * Math.PI / 180, L = 170, half = 0.5;   // the cone: where it points, about 60 degrees wide
               const a = [x + L * Math.cos(h - half), y + L * Math.sin(h - half)], b = [x + L * Math.cos(h + half), y + L * Math.sin(h + half)], tip = [x + L * Math.cos(h), y + L * Math.sin(h)];
@@ -228,6 +230,8 @@ function App() {
           <div class="row tight">
             <button class="small" disabled=${!map || (map.path || []).length < 2} title="the dog stands on path point 1 facing point 2" onClick=${() => post("/dog/calibrate", { p: map.path[0], toward: map.path[1] }).then(r => r.json()).then(setLast)}>at path start, facing pt 2</button>
             <button class="small" disabled=${!dog?.map || !map || (map.path || []).length < 2} title="keep the position, point the nose at the next path point ahead of the dog" onClick=${() => { const P = map.path, q = dog.map.p; let k = 0, best = 1e9; P.forEach((pt, i) => { const d = Math.hypot(pt[0] - q[0], pt[1] - q[1]); if (d < best) { best = d; k = i; } }); const nxt = P[Math.min(k + 1, P.length - 1)]; post("/dog/calibrate", { p: q, toward: nxt }).then(r => r.json()).then(setLast); }}>facing next pt</button>
+            <button class=${"small" + (dog?.rec ? " on" : "")} disabled=${!dog?.calibrated} title="drive it with the controller; the trace of where it thinks it is becomes the route" onClick=${() => post("/dog/record", { on: !dog?.rec }).then(r => r.json()).then(o => { setLast(o); if (o.ok && o.rec && !o.rec.active) fetch("/map").then(r => r.json()).then(setMap); })}>${dog?.rec ? `stop & save route (${dog.rec.n} pts)` : "record route"}</button>
+            ${dog?.rec && html`<button class="small" onClick=${() => post("/dog/mark", {}).then(r => r.json()).then(setLast)}>mark stop here (${dog.rec.marks.length})</button>`}
             <button class=${"small" + (dog?.avoid ? " on" : "")} disabled=${!dog?.connected} title="the dog's own obstacle avoidance; velocities go through it while on" onClick=${() => post("/dog/avoid", { on: !dog?.avoid }).then(r => r.json()).then(setLast)}>${dog?.avoid ? "avoid on" : "avoid off"}</button>
             <button class=${"small" + (dog?.follow?.active ? " on" : "")} disabled=${!dog?.calibrated || dog?.follow?.active} onClick=${() => post("/dog/follow", {}).then(r => r.json()).then(setLast)}>follow the path</button>
             <button class="small" disabled=${dog?.follow?.stopped_at == null} onClick=${() => post("/dog/resume", {}).then(r => r.json()).then(setLast)}>resume</button>

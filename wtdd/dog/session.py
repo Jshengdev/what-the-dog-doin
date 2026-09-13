@@ -14,7 +14,9 @@ Where it thinks it is: calibrate(p, heading) ties the odometry pose now to a map
 carries "map": {p, heading_deg}. follow(path, stops) switches the dog's obstacle avoidance on (read back, refused
 otherwise) and is a task that feeds nav.steer velocities into the same drive loop, waypoint by waypoint, pausing at the
 map's stops until resume(); stop() cancels it. With avoidance on, the drive loop sends velocities through the
-OBSTACLES_AVOID service (MOVE 1003, no ack) instead of SPORT Move; the state read-back is the receipt. One dog.calibrate and one dog.follow
+OBSTACLES_AVOID service (MOVE 1003, no ack) instead of SPORT Move; the state read-back is the receipt. record(True)
+records the believed pose while Johnny drives, mark() adds a stop at the current spot, record(False) returns the
+thinned trace as {path, stops} and the API writes it into ui/map.json: the route the dog drove is the route it follows. One dog.calibrate and one dog.follow
 row; a failed or cancelled follow says so in state().follow.error.
 
 The looks, measured on this dog (firmware < 1.1.15, motion mode mcf) on 2026-09-13:
@@ -47,6 +49,7 @@ LOOKS = ("level", "tilt", "sit")
 TILT_MIN_DEG = 8.0                            # a tilt frame counts only if the IMU shows at least this much nose-up
 STALE_MS = 5000                               # state stream (20 Hz) older than this: the peer is dead, reconnect once
 WP_TIMEOUT_S = 30.0                           # a waypoint not reached in this long fails the follow (no retry)
+REC_HZ, REC_MIN_PX, REC_STEP_PX = 5.0, 10, 45   # route recording: sample rate, min move per sample, waypoint spacing (about 0.4 m)
 STOP_TIMEOUT_S = 180.0                        # a stop without resume for this long fails the follow
 
 
@@ -76,6 +79,8 @@ class DogSession:
             log("dog", "calibration loaded", file=CAL_FILE.name, map=self.cal.get("map"), at=self.cal.get("at"))
         self.follow_state: dict[str, Any] = {}       # the follower's live status (GET /dog/state .follow)
         self._follower: asyncio.Task | None = None
+        self.rec: dict[str, Any] | None = None       # a route being recorded by driving: {points, marks, started}
+        self._recorder: asyncio.Task | None = None
 
     # ---- plumbing
     def run(self, coro: Awaitable[Any], timeout: float = 120.0) -> Any:
@@ -111,7 +116,63 @@ class DogSession:
         st = self.body.state() if self.body else None
         return {"connected": self.body is not None, "moving": self.moving, "vel": list(self.vel), "state": st,
                 "map": self.map_pose(st), "calibrated": self.cal is not None, "follow": self.follow_state,
-                "avoid": self.body._avoid if self.body else None}
+                "avoid": self.body._avoid if self.body else None,
+                "rec": {"active": True, "n": len(self.rec["points"]), "points": self.rec["points"], "marks": self.rec["marks"]} if self.rec else None}
+
+    # ---- recording a route by driving (the trace of where it thinks it is becomes the map's path)
+    def record(self, on: bool) -> dict[str, Any]:
+        """on: start sampling map_pose() at REC_HZ (a point every REC_MIN_PX). off: stop and return {path, stops}: the
+        trace thinned to REC_STEP_PX between waypoints, marks mapped to their nearest waypoint. One dog.record row."""
+        if on:
+            if self.cal is None:
+                raise RuntimeError("not calibrated: drag the dog to where it is first")
+            if self.rec:
+                raise RuntimeError("already recording")
+            self.run(self._ensure())
+            pose = self.map_pose()
+            if pose is None:
+                raise RuntimeError("no pose yet")
+            self.rec = {"points": [pose["p"]], "marks": [], "started": time.time()}
+            self._recorder = asyncio.run_coroutine_threadsafe(self._record(), self.loop)
+            log("dog", "recording route", start=pose["p"])
+            return {"active": True, "n": 1}
+        if not self.rec:
+            raise RuntimeError("not recording")
+        if self._recorder:
+            self._recorder.cancel()
+        rec, self.rec = self.rec, None
+        pts = rec["points"]
+        path: list = [pts[0]]
+        for q in pts[1:]:
+            if math.dist(q, path[-1]) >= REC_STEP_PX:
+                path.append(q)
+        if math.dist(pts[-1], path[-1]) > 1:
+            path.append(pts[-1])
+        stops = sorted({min(range(len(path)), key=lambda i: math.dist(path[i], m)) for m in rec["marks"]})
+        length = round(sum(math.dist(path[i - 1], path[i]) for i in range(1, len(path))))
+        with step("dog", "dog.record", "map", {"samples": len(pts), "marks": rec["marks"]}) as r:
+            r["state_after"] = {"path_pts": len(path), "stops": stops, "length_px": length, "seconds": round(time.time() - rec["started"], 1)}
+        log("dog", "route recorded", samples=len(pts), waypoints=len(path), stops=stops, length_px=length)
+        return {"active": False, "path": path, "stops": stops, "length_px": length, "samples": len(pts)}
+
+    def mark(self) -> dict[str, Any]:
+        """A stop at the dog's current believed position (while recording)."""
+        if not self.rec:
+            raise RuntimeError("not recording")
+        pose = self.map_pose()
+        self.rec["marks"].append(pose["p"])
+        log("dog", "stop marked", p=pose["p"], n=len(self.rec["marks"]))
+        return {"marks": self.rec["marks"]}
+
+    async def _record(self) -> None:
+        try:
+            while self.rec:
+                pose = self.map_pose()
+                if pose and math.dist(pose["p"], self.rec["points"][-1]) >= REC_MIN_PX:
+                    self.rec["points"].append(pose["p"])
+                await asyncio.sleep(1 / REC_HZ)
+        except asyncio.CancelledError:
+            return
 
     def avoid(self, on: bool) -> bool:
         """The dog's own obstacle avoidance, with read-back (wtdd/dog/body.py avoid). While it is on, every velocity this
