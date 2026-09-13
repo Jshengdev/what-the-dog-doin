@@ -69,3 +69,5 @@ Sources: https://github.com/photon-hq/imessage-kit · https://github.com/legion1
 
 - 2026-09-12: repo created. Idea not yet articulated.
 - 2026-09-12 (Johnny, verbatim): "a basic idea i have is just something to connect an agent to imessage group chats about housemates, then it connects to phillips hue if possible and this tuya app on my phone and then finally a unitree robo dog and want to call the project what hte dog doin. and its just an agent that acts as the intermediate for your smart home"
+- 2026-09-12 (Johnny, verbatim): "i have a phsyical unitree dog i signedi nto phillip and tuya does tha wok?> the devices tuya is just hte living room lights. THe overall concept here is real world housemate enviornemtn. when you live iwth housemates and want the dog to go find out what you doin. something liek that"
+  - Resolved: physical Unitree dog exists (model not yet stated). Tuya devices = the living room lights only. Signed into the Hue app and the Tuya app on the phone.
