@@ -2,24 +2,88 @@
   "note": "Map space = house.svg viewBox (0 0 1060 1540). path = the entity's route (draw on the page). entity = radius_px (how far a light reacts), speed_px_s, falloff (curve steepness; 1 linear, higher = brightness holds near the center then drops), other_room_factor (lights in rooms the entity is not in are scaled by this), samples (points along the strip line). lights = Johnny's placed markers: kind dot (lamp) or line (the strip); pts in map space; room is computed from rooms. zones stay for the chat commands and the light show.",
   "path": [
     [
-      290,
-      1240
+      848,
+      1370
     ],
     [
-      380,
-      1240
+      656,
+      1365
     ],
     [
-      470,
-      1240
+      460,
+      1316
     ],
     [
-      560,
-      1240
+      406,
+      1138
     ],
     [
-      650,
-      1240
+      419,
+      1000
+    ],
+    [
+      339,
+      884
+    ],
+    [
+      375,
+      763
+    ],
+    [
+      491,
+      723
+    ],
+    [
+      527,
+      857
+    ],
+    [
+      428,
+      879
+    ],
+    [
+      330,
+      794
+    ],
+    [
+      393,
+      589
+    ],
+    [
+      455,
+      460
+    ],
+    [
+      522,
+      232
+    ],
+    [
+      428,
+      187
+    ],
+    [
+      446,
+      643
+    ],
+    [
+      446,
+      839
+    ],
+    [
+      437,
+      973
+    ],
+    [
+      437,
+      1178
+    ],
+    [
+      500,
+      1348
+    ],
+    [
+      879,
+      1379
     ]
   ],
   "zones": [
@@ -106,10 +170,11 @@
       "device": "hue",
       "pts": [
         [
-          655,
-          1267
+          322,
+          991
         ]
-      ]
+      ],
+      "room": "dining room"
     },
     {
       "id": "56ecb61c-00c8-46ac-8dca-abe789ba27c3",
@@ -122,7 +187,8 @@
           596,
           780
         ]
-      ]
+      ],
+      "room": "dining room"
     },
     {
       "id": "6c2556e3-bf37-4efd-9a04-b60ebd1b3452",
@@ -135,7 +201,8 @@
           304,
           336
         ]
-      ]
+      ],
+      "room": "bedroom 2"
     },
     {
       "id": "d7b0ae35-f044-429c-9eed-a3164173d340",
@@ -145,10 +212,11 @@
       "device": "hue",
       "pts": [
         [
-          323,
-          1001
+          627,
+          1177
         ]
-      ]
+      ],
+      "room": "living room"
     },
     {
       "id": "strip",
@@ -165,7 +233,8 @@
           690,
           1420
         ]
-      ]
+      ],
+      "room": "living room"
     }
   ],
   "rooms": [

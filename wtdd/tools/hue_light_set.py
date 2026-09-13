@@ -9,4 +9,5 @@ def run(light="special", on=True, percent=None):
     from ..hue.__main__ import resolve
     on = on if isinstance(on, bool) else str(on).lower() in ("1", "true", "on", "yes")
     b = HueBridge.from_env()
-    return b.set(resolve(b.lights(), light)["id"], on=on, bri=(float(percent) if (percent is not None and on) else None))
+    rid = light if len(light) == 36 and light.count("-") == 4 else resolve(b.lights(), light)["id"]   # uuid: no lookup
+    return b.set(rid, on=on, bri=(float(percent) if (percent is not None and on) else None))

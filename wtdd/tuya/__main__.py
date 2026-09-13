@@ -61,15 +61,19 @@ def write(tool: str, args: dict[str, Any], fn) -> dict[str, Any]:
 
 
 def strip(on: bool | None = None, bri: float | None = None, temp: float | None = None) -> dict[str, Any]:
-    """Programmatic entry used by the chat commands: one ledger row per field written, read-back after."""
-    out = {}
+    """Programmatic entry used by the field and the chat: ONE write carrying every requested field (switch, brightness,
+    colour temperature), then one read-back. One ledger row. About 0.4 s on the LAN."""
+    dps: dict[str, Any] = {}
     if on is not None:
-        out = write("lights.tuya_set", {"on": on}, lambda d: d.turn_on(nowait=True) if on else d.turn_off(nowait=True))
+        dps[DPS["switch"]] = bool(on)
     if bri is not None:
-        out = write("lights.tuya_set", {"brightness_pct": bri}, lambda d: d.set_brightness_percentage(bri, nowait=True))
+        dps[DPS["bright"]] = int(round(10 + max(0.0, min(100.0, float(bri))) * 9.9))
     if temp is not None:
-        out = write("lights.tuya_set", {"temp_pct": temp}, lambda d: d.set_colourtemp_percentage(temp, nowait=True))
-    return out
+        dps[DPS["temp"]] = int(round(max(0.0, min(100.0, float(temp))) * 10))
+    if not dps:
+        return read(device())
+    args = {k: v for k, v in (("on", on), ("brightness_pct", bri), ("temp_pct", temp)) if v is not None}
+    return write("lights.tuya_set", args, lambda d: d.set_multiple_values(dps, nowait=True))
 
 
 def cmd_probe(a: argparse.Namespace) -> int:
