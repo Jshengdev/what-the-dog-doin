@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             warned += 1
             if a.once:
                 return 1
-            time.sleep(2)
+            time.sleep(10 if "unreachable" in str(e) or "503" in str(e) else 2)   # no dog: back off, the API is not re-probed either
             continue
         if a.once:
             print(json.dumps({k: d[k] for k in ("ts", "ms", "n", "classes", "boxes", "file")}))

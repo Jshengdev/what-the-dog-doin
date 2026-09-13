@@ -51,6 +51,7 @@ DRIVE_HOLD_S = 0.6                            # a velocity older than this is a 
 LOOKS = ("level", "tilt", "sit")
 TILT_MIN_DEG = 8.0                            # a tilt frame counts only if the IMU shows at least this much nose-up
 STALE_MS = 5000                               # state stream (20 Hz) older than this: the peer is dead, reconnect once
+PROBE_BACKOFF_S = 15.0                        # after a failed connect, callers get the same error without a new probe row for this long
 WP_TIMEOUT_S = 30.0                           # a waypoint not reached in this long fails the follow (no retry)
 REC_HZ, REC_MIN_PX, REC_STEP_PX = 5.0, 10, 45   # route recording: sample rate, min move per sample, waypoint spacing (about 0.4 m)
 START_PX = 90                                 # a dog this close to the path's first point replays from the start (a loop's end is also its start)
@@ -73,6 +74,7 @@ class DogSession:
         threading.Thread(target=self.loop.run_forever, name="dog-session", daemon=True).start()
         self.body: Body | None = None
         self._connecting = asyncio.Lock()   # one connect at a time: the dog takes one peer (a frame pull and a look can race)
+        self._unreachable: tuple[float, str] | None = None   # (when, why) of the last failed connect: not re-probed for PROBE_BACKOFF_S
         self.vel = (0.0, 0.0, 0.0)
         self.vel_t = 0.0
         self.moving = False
@@ -106,8 +108,15 @@ class DogSession:
                     log("dog", "old session close failed", err=f"{type(e).__name__}: {str(e)[:80]}")
                 self.body = None
         if self.body is None:
+            if self._unreachable and time.monotonic() - self._unreachable[0] < PROBE_BACKOFF_S:
+                raise RuntimeError(f"dog unreachable {round(time.monotonic() - self._unreachable[0])} s ago, not probing again yet: {self._unreachable[1]}")
             b = Body()
-            await b.connect()
+            try:
+                await b.connect()
+            except Exception as e:
+                self._unreachable = (time.monotonic(), f"{type(e).__name__}: {str(e)[:120]}")
+                raise
+            self._unreachable = None
             self.body = b
             self._driver = self.loop.create_task(self._drive_loop())
         return self.body
