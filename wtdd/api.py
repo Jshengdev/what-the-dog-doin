@@ -73,7 +73,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/tools":
             return self._json(200, tools.describe())
         if u.path == "/map":
-            return self._json(200, json.loads(MAP.read_text()))
+            return self._json(200, {**json.loads(MAP.read_text()), "_version": int(MAP.stat().st_mtime)})   # the page sends it back on save
         if u.path == "/ledger":
             return self._json(200, rows(int((parse_qs(u.query).get("n") or ["20"])[0])))
         if u.path == "/field":
@@ -116,6 +116,10 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/map":
             data = self._body()
+            seen = data.pop("_version", None)
+            if seen is not None and MAP.exists() and int(MAP.stat().st_mtime) != int(seen):   # a stale page must not overwrite a recording or another tab's save
+                log("api", "map NOT saved: stale page", page=seen, file=int(MAP.stat().st_mtime))
+                return self._json(409, {"ok": False, "error": "not saved: the map changed on the server since this page loaded (a recording, or another tab). Reload the page, then redo the edit."})
             problems = check_path(data.get("path", []), data.get("rooms", []))
             if problems and data.get("path"):   # an unrunnable path is refused, with the points named; the page keeps the edit
                 log("api", "map NOT saved", problems=len(problems))
@@ -124,7 +128,7 @@ class H(BaseHTTPRequestHandler):
                 MAP.with_name("map.prev.json").write_text(MAP.read_text())   # the previous route survives one overwrite
             MAP.write_text(json.dumps(data, indent=2) + "\n")
             log("api", "map saved", points=len(data.get("path", [])), stops=len(data.get("stops", [])))
-            return self._json(200, {"ok": True})
+            return self._json(200, {"ok": True, "_version": int(MAP.stat().st_mtime)})
         if u.path in ("/dog/drive", "/dog/stop", "/dog/calibrate", "/dog/follow", "/dog/resume", "/dog/avoid", "/dog/record", "/dog/mark", "/dog/lidar"):
             import math
             from .dog import nav
