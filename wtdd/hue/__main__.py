@@ -258,12 +258,50 @@ def remote_refresh(a: argparse.Namespace) -> int:
     return 0
 
 
+def burst(a: argparse.Namespace) -> int:
+    """Rate-limit probe: n back-to-back brightness PUTs (alternating +1/-1, imperceptible) on one light with the throttle
+    off; prints status and latency per call and stops at the first 429; restores the original brightness."""
+    b = bridge()
+    light = resolve(b.lights(), a.light)
+    rid = light["id"]
+    start = summary(b.read(rid))
+    base = float(start.get("brightness") or 50)
+    b._last_put = {}
+    b.__dict__["_no_throttle"] = True
+    results = []
+    orig_throttle = b._throttle
+    b._throttle = lambda rtype: None
+    try:
+        for i in range(a.n):
+            bri = max(1.0, min(100.0, base + (1 if i % 2 == 0 else -1)))
+            t0 = time.monotonic()
+            try:
+                b.set(rid, bri=bri)
+                results.append((i, "ok", round((time.monotonic() - t0) * 1000)))
+            except HueError as e:
+                results.append((i, f"HTTP {e.status}", round((time.monotonic() - t0) * 1000)))
+                if e.status == 429:
+                    break
+    finally:
+        b._throttle = orig_throttle
+        time.sleep(1.0)
+        b.set(rid, bri=base)
+    for i, st, ms in results:
+        print(f"{i:>3}  {st:<9} {ms:>5} ms")
+    oks = [ms for _, st, ms in results if st == "ok"]
+    print(f"\n{len(oks)} ok of {len(results)}; median {sorted(oks)[len(oks)//2] if oks else '-'} ms; "
+          f"first 429 at call {next((i for i, st, _ in results if st == 'HTTP 429'), 'none')}; mode={'remote' if b.remote else 'local'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m wtdd.hue", description="Philips Hue lights agent (CLIP v2, LAN)")
     sub = p.add_subparsers(dest="cmd", required=True)
     ra = sub.add_parser("remote-auth", help="cloud path: OAuth login -> tokens -> cloud link button -> app key (writes .env)")
     ra.add_argument("--port", type=int, default=8787); ra.add_argument("--timeout", type=float, default=180.0)
     ra.set_defaults(fn=remote_auth)
+    bu = sub.add_parser("burst", help="rate-limit probe: n quick brightness PUTs on one light, stop at first 429")
+    bu.add_argument("light"); bu.add_argument("--n", type=int, default=15); bu.set_defaults(fn=burst)
     sub.add_parser("remote-refresh", help="refresh the cloud token with HUE_REMOTE_REFRESH").set_defaults(fn=remote_refresh)
     sub.add_parser("probe", help="discovery, tcp, config, key, light count; never throws before the table")
     sp = sub.add_parser("pair", help="link-button flow; writes HUE_APP_KEY into .env")

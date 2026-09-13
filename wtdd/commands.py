@@ -18,13 +18,17 @@ def _bridge():
     return HueBridge.from_env()
 
 
-def lights(on: bool) -> str:
+ZONE = "living room"   # the only zone the chat may touch (docs/SCOPE-LOCK: never a device that was not asked for)
+
+
+def lights(on: bool, bri: float | None = None) -> str:
+    """Sets every light in the living room zone (wtdd/hue/zones.json), never any other light, with read-back per light."""
+    from .hue.__main__ import set_zone
     b = _bridge()
-    names = []
-    for light in b.lights():
-        b.set(light["id"], on=on)
-        names.append(light["metadata"]["name"])
-    return f"lights {'on' if on else 'off'}: {', '.join(names)}"
+    names = {l["id"]: l["metadata"]["name"] for l in b.lights()}
+    out = set_zone(b, ZONE, on, bri)
+    done = ", ".join(names.get(i, i[:8]) for i in out)
+    return f"{ZONE} lights {'on' if on else 'off'}: {done} (read back)"
 
 
 async def _with_dog(fn: Callable) -> Any:

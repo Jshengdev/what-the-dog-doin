@@ -1,5 +1,27 @@
 {
-  "a": {"lights": [], "x_range": [0.0, 1.5]},
-  "b": {"lights": [], "x_range": [1.5, 3.0]},
-  "c": {"lights": [], "x_range": [3.0, 4.5]}
+  "a": {
+    "lights": [],
+    "x_range": [
+      0.0,
+      1.5
+    ]
+  },
+  "b": {
+    "lights": [],
+    "x_range": [
+      1.5,
+      3.0
+    ]
+  },
+  "c": {
+    "lights": [],
+    "x_range": [
+      3.0,
+      4.5
+    ]
+  },
+  "living room": {
+    "lights": [],
+    "note": "fill with the ids of the three table wash lights and the table light from `python -m wtdd.hue lights`"
+  }
 }

@@ -182,6 +182,19 @@ def cmd_triggers(a: argparse.Namespace) -> None:
         print(f"{phrase!r}: wake={is_wake(phrase)} command={match_command(phrase)}")
 
 
+def cmd_simulate(a: argparse.Namespace) -> None:
+    """Feeds the texts through the listener as if a housemate sent them. Posts nothing (dry run); commands run for real."""
+    from .listen import Listener
+    guid = _guid(a)
+    l = Listener(guid, post, listen_s=a.listen_s, dry_run=True)
+    for i, text in enumerate(a.text, 1):
+        m = {"rowid": -i, "guid": f"sim-{int(time.time())}-{i}", "text": text, "is_from_me": 0,
+             "sender": a.sender, "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S"), "attachments": [], "has_attachments": 0}
+        print(f"> {text}")
+        l.handle(m)
+        print(f"  armed={l.armed}")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m wtdd.chat")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -191,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     l.add_argument("--listen-s", type=float, default=float(config.maybe("WTDD_LISTEN_S") or 120), help="seconds the dog stays armed after a wake or command")
     l.add_argument("--dry-run", action="store_true", help="recognize and log, post nothing")
     l.add_argument("--once", action="store_true"); l.set_defaults(fn=cmd_listen)
+    sm = sub.add_parser("simulate", help="feed texts through the listener (dry-run posts, REAL commands)")
+    sm.add_argument("text", nargs="+"); sm.add_argument("--guid"); sm.add_argument("--sender", default="+10000000000")
+    sm.add_argument("--listen-s", type=float, default=120.0); sm.set_defaults(fn=cmd_simulate)
     t = sub.add_parser("triggers", help="print the wake phrases and commands, and test phrases against them")
     t.add_argument("phrase", nargs="*"); t.set_defaults(fn=cmd_triggers)
     sub.add_parser("chats", help="named chats with guid, members, last message time (read-only)").set_defaults(fn=cmd_chats)
